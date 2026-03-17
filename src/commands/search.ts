@@ -59,7 +59,11 @@ export async function runSearch(
   }
 
   if (results.length === 0) {
-    console.log("No results found.");
+    if (options.json) {
+      console.log("[]");
+    } else {
+      console.log("No results found.");
+    }
     return;
   }
 
