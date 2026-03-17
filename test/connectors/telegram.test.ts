@@ -54,14 +54,14 @@ describe("Telegram connector (mock mode)", () => {
     const config = {
       telegram: { api_id: "", api_hash: "", phone: "", chats: [] },
     } as any;
-    expect(telegramConnector.hasCredentials(config)).toBe(false);
+    expect(telegramConnector.hasCredentials!(config)).toBe(false);
   });
 
   it("hasCredentials returns true with api_id and api_hash", () => {
     const config = {
       telegram: { api_id: "123", api_hash: "abc", phone: "", chats: [] },
     } as any;
-    expect(telegramConnector.hasCredentials(config)).toBe(true);
+    expect(telegramConnector.hasCredentials!(config)).toBe(true);
   });
 
   it("runTg throws SubprocessTimeoutError when process exceeds timeout", async () => {
