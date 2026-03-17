@@ -1,7 +1,7 @@
 import { join } from "path";
 import { homedir } from "os";
 import type { TraulDB } from "../db/database";
-import type { TraulConfig } from "../lib/config";
+import { loadConfig, type TraulConfig } from "../lib/config";
 import { Scheduler } from "../daemon/scheduler";
 import { startHealthServer, stopHealthServer } from "../daemon/health";
 import { writePid, readPid, removePid, isProcessAlive } from "../daemon/pid";
@@ -72,6 +72,7 @@ export async function runDaemonStart(
   }
 
   const scheduler = new Scheduler(config.daemon, async (source, onProgress) => {
+    const currentConfig = loadConfig();
     if (source === "embed") {
       await runEmbed(db, { limit: "10000", quiet: true, onProgress });
     } else {
@@ -80,7 +81,7 @@ export async function runDaemonStart(
         log.warn(`Unknown source: ${source}`);
         return;
       }
-      const result = await connector.sync(db, config);
+      const result = await connector.sync(db, currentConfig);
       log.info(`${source}: ${result.messagesAdded} added, ${result.contactsAdded} contacts`);
     }
   }, enabled);
