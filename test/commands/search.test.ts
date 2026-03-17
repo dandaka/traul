@@ -1,6 +1,7 @@
-import { describe, it, expect, beforeEach } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach, spyOn } from "bun:test";
 import { TraulDB } from "../../src/db/database";
 import { EMBED_DIMS } from "../../src/lib/embeddings";
+import { runSearch } from "../../src/commands/search";
 
 function fakeEmbedding(): Uint8Array {
   const vec = new Float32Array(EMBED_DIMS);
@@ -87,6 +88,39 @@ describe("Search command logic", () => {
     // Non-matching substring should return nothing
     const results3 = db.searchMessages("feedback", { channel: "slack" });
     expect(results3.length).toBe(0);
+  });
+});
+
+describe("runSearch empty results output", () => {
+  let db: TraulDB;
+  let logSpy: ReturnType<typeof spyOn>;
+  let warnSpy: ReturnType<typeof spyOn>;
+
+  beforeEach(() => {
+    db = new TraulDB(":memory:");
+    logSpy = spyOn(console, "log").mockImplementation(() => {});
+    warnSpy = spyOn(console, "warn").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    logSpy.mockRestore();
+    warnSpy.mockRestore();
+  });
+
+  it("outputs [] when --json and no results", async () => {
+    await runSearch(db, "nonexistent", { json: true, fts: true });
+    expect(logSpy).toHaveBeenCalledWith("[]");
+  });
+
+  it("outputs 'No results found.' when no --json and no results", async () => {
+    await runSearch(db, "nonexistent", { fts: true });
+    expect(logSpy).toHaveBeenCalledWith("No results found.");
+  });
+
+  it("--json empty output is valid JSON", async () => {
+    await runSearch(db, "nonexistent", { json: true, fts: true });
+    const output = logSpy.mock.calls[0][0] as string;
+    expect(JSON.parse(output)).toEqual([]);
   });
 });
 
