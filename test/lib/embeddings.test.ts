@@ -1,4 +1,4 @@
-import { describe, it, expect, mock, beforeEach } from "bun:test";
+import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test";
 import { embedBatch, BATCH_SIZE } from "../../src/lib/embeddings";
 
 // We mock fetch to avoid hitting Ollama in tests
@@ -28,6 +28,10 @@ function ollamaError(error: string) {
 
 describe("embedBatch", () => {
   beforeEach(() => {
+    restoreFetch();
+  });
+
+  afterEach(() => {
     restoreFetch();
   });
 
