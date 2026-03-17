@@ -6,6 +6,18 @@ import * as log from "../lib/logger";
 
 const TG_SCRIPT = join(import.meta.dir, "..", "..", "scripts", "tg_sync.py");
 
+/** Default subprocess timeout: 5 minutes */
+export const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
+
+export class SubprocessTimeoutError extends Error {
+  constructor(command: string, timeoutMs: number) {
+    super(
+      `Telegram subprocess timed out after ${Math.round(timeoutMs / 1000)}s: ${command}`
+    );
+    this.name = "SubprocessTimeoutError";
+  }
+}
+
 interface TgMessage {
   id: number;
   sender: string;
@@ -38,12 +50,22 @@ interface BulkChatResult {
   messages: TgMessage[];
 }
 
-async function runTg(args: string[], stdin?: string): Promise<string> {
+export async function runTg(
+  args: string[],
+  stdin?: string,
+  timeoutMs: number = DEFAULT_TIMEOUT_MS
+): Promise<string> {
   const proc = Bun.spawn(["python3", TG_SCRIPT, ...args], {
     stdout: "pipe",
     stderr: "pipe",
     stdin: stdin ? new Blob([stdin]) : undefined,
   });
+
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    proc.kill();
+  }, timeoutMs);
 
   // Stream stderr to log for progress visibility
   const stderrPromise = (async () => {
@@ -70,6 +92,11 @@ async function runTg(args: string[], stdin?: string): Promise<string> {
   const stdout = await new Response(proc.stdout).text();
   const stderr = await stderrPromise;
   const exitCode = await proc.exited;
+  clearTimeout(timer);
+
+  if (timedOut) {
+    throw new SubprocessTimeoutError(`tg.py ${args[0]}`, timeoutMs);
+  }
   if (exitCode !== 0) {
     throw new Error(`tg.py ${args[0]} failed (exit ${exitCode}): ${stderr}`);
   }
@@ -209,6 +236,13 @@ export const telegramConnector: Connector = {
       stdin: new Blob([JSON.stringify(bulkSpecs)]),
     });
 
+    // Timeout guard for bulk subprocess
+    let bulkTimedOut = false;
+    const bulkTimer = setTimeout(() => {
+      bulkTimedOut = true;
+      proc.kill();
+    }, DEFAULT_TIMEOUT_MS);
+
     // Stream stderr for progress
     const stderrDrain = (async () => {
       const reader = proc.stderr.getReader();
@@ -331,6 +365,11 @@ export const telegramConnector: Connector = {
 
     await stderrDrain;
     await proc.exited;
+    clearTimeout(bulkTimer);
+
+    if (bulkTimedOut) {
+      throw new SubprocessTimeoutError("tg.py bulk-recent", DEFAULT_TIMEOUT_MS);
+    }
 
     const elapsed = Math.round((Date.now() - syncStart) / 1000);
     log.info(`  Sync completed in ${elapsed}s: ${result.messagesAdded} messages, ${result.contactsAdded} contacts`);
