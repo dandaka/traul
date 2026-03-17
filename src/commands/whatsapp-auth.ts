@@ -51,7 +51,7 @@ export async function runWhatsAppAuth(config: TraulConfig, accountName: string):
 
   console.log("\nScan this QR code with WhatsApp on your phone:\n");
 
-  const qrResp = await fetch(`${url}/api/sessions/${session}/auth/qr`, { headers });
+  const qrResp = await fetch(`${url}/api/${session}/auth/qr?format=raw`, { headers });
   if (!qrResp.ok) {
     console.error(`Failed to get QR code: ${qrResp.status}`);
     process.exit(1);
