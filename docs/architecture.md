@@ -827,7 +827,7 @@ const tools = [
 ### Technology Stack
 
 - **Runtime:** Bun (TypeScript)
-- **Database:** SQLite via `better-sqlite3` or `bun:sqlite`
+- **Database:** SQLite via `bun:sqlite`
 - **Full-text search:** FTS5 (built-in)
 - **Vector search:** sqlite-vec
 - **Embeddings:** nomic-embed-text via Ollama (local)
