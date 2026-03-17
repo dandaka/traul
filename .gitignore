@@ -10,3 +10,4 @@ dist/
 *.pem
 *.key
 credentials.json
+.claude/worktrees/
