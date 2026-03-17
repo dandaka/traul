@@ -79,6 +79,64 @@ Per-workspace tokens: `SLACK_TOKEN_<WORKSPACE>`, `LINEAR_API_KEY_<WORKSPACE>`.
 
 Details → **[Getting Started](docs/getting-started.md)**
 
+### WhatsApp (via WAHA)
+
+WhatsApp sync works through [WAHA](https://waha.devlike.pro/) — a self-hosted WhatsApp HTTP API that runs locally in Docker. No cloud services, no third-party access to your messages.
+
+**1. Start WAHA**
+
+```sh
+docker compose -f docker-compose.waha.yml up -d
+```
+
+This starts WAHA on `http://localhost:3000` with persistent session storage.
+
+**2. Configure Traul**
+
+Add a WhatsApp instance to `~/.config/traul/config.json`:
+
+```json
+{
+  "whatsapp": {
+    "instances": [
+      {
+        "name": "personal",
+        "url": "http://localhost:3000",
+        "api_key": "",
+        "session": "default",
+        "chats": []
+      }
+    ]
+  }
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `name` | Label for this account (used in logs and message IDs) |
+| `url` | WAHA API endpoint |
+| `api_key` | WAHA API key (leave empty if not configured) |
+| `session` | WAHA session name |
+| `chats` | Filter to specific chat IDs or name substrings (empty = all chats) |
+
+**3. Authenticate**
+
+Link your WhatsApp account by scanning a QR code:
+
+```sh
+traul whatsapp auth personal
+```
+
+This starts a WAHA session and presents a QR code — scan it with WhatsApp on your phone (Settings → Linked Devices → Link a Device).
+
+**4. Sync messages**
+
+```sh
+traul sync whatsapp
+```
+
+Messages are stored locally in SQLite, same as every other connector. Use `traul search` to query across WhatsApp and all other sources.
+
 ## Development
 
 ```sh
