@@ -60,10 +60,12 @@ export async function runWhatsAppAuth(config: TraulConfig, accountName: string):
   const qrData = await qrResp.json() as { value: string };
 
   try {
-    const { exec } = await import("child_process");
-    const { promisify } = await import("util");
-    const execAsync = promisify(exec);
-    await execAsync(`echo "${qrData.value}" | npx -y qrcode-terminal`);
+    const proc = Bun.spawn(["npx", "--yes", "qrcode-terminal"], {
+      stdin: new Blob([qrData.value + "\n"]),
+      stdout: "inherit",
+      stderr: "inherit",
+    });
+    await proc.exited;
   } catch {
     console.log("QR value (scan with a QR reader or open in browser):");
     console.log(`${url}/api/${session}/auth/qr?format=image`);
