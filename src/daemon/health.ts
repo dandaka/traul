@@ -32,7 +32,7 @@ export async function startHealthServer(
   port: number,
   getStates: () => Map<string, SourceState>,
   config: TraulConfig,
-): Promise<void> {
+): Promise<number> {
   startedAt = Date.now();
 
   try {
@@ -69,10 +69,13 @@ export async function startHealthServer(
         return new Response("Not Found", { status: 404 });
       },
     });
-    log.info(`Health endpoint listening on 127.0.0.1:${port}`);
+    const actualPort = server.port ?? port;
+    log.info(`Health endpoint listening on 127.0.0.1:${actualPort}`);
+    return actualPort;
   } catch (err) {
     log.warn(`Could not start health endpoint on port ${port}: ${err}`);
     log.warn("Daemon will run without health endpoint.");
+    return 0;
   }
 }
 

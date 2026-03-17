@@ -6,8 +6,6 @@ import type { SourceState } from "../../src/daemon/types";
 const mockConfig = loadConfig();
 
 describe("health endpoint", () => {
-  let port: number;
-
   afterEach(async () => {
     await stopHealthServer();
   });
@@ -33,8 +31,8 @@ describe("health endpoint", () => {
       },
     });
 
-    port = 13847;
-    await startHealthServer(port, () => states, mockConfig);
+    const port = await startHealthServer(0, () => states, mockConfig);
+    expect(port).toBeGreaterThan(0);
 
     const res = await fetch(`http://127.0.0.1:${port}/health`);
     expect(res.status).toBe(200);
@@ -52,8 +50,8 @@ describe("health endpoint", () => {
 
   it("/ aliases to /health", async () => {
     const states = new Map<string, SourceState>();
-    port = 13848;
-    await startHealthServer(port, () => states, mockConfig);
+    const port = await startHealthServer(0, () => states, mockConfig);
+    expect(port).toBeGreaterThan(0);
 
     const res = await fetch(`http://127.0.0.1:${port}/`);
     expect(res.status).toBe(200);
@@ -63,19 +61,21 @@ describe("health endpoint", () => {
 
   it("returns 404 for unknown paths", async () => {
     const states = new Map<string, SourceState>();
-    port = 13849;
-    await startHealthServer(port, () => states, mockConfig);
+    const port = await startHealthServer(0, () => states, mockConfig);
+    expect(port).toBeGreaterThan(0);
 
     const res = await fetch(`http://127.0.0.1:${port}/unknown`);
     expect(res.status).toBe(404);
   });
 
   it("degrades gracefully when port is occupied", async () => {
-    const blocker = Bun.serve({ port: 13851, hostname: "127.0.0.1", fetch: () => new Response("blocked") });
+    const blocker = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response("blocked") });
+    const blockedPort = blocker.port!;
     const states = new Map<string, SourceState>();
 
-    // Should not throw
-    await startHealthServer(13851, () => states, mockConfig);
+    // Should not throw, returns 0 indicating failure
+    const port = await startHealthServer(blockedPort, () => states, mockConfig);
+    expect(port).toBe(0);
 
     blocker.stop(true);
   });

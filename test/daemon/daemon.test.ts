@@ -31,8 +31,8 @@ describe("daemon integration", () => {
       fired.add(source);
     });
 
-    const port = 13850;
-    await startHealthServer(port, () => scheduler!.getStates(), loadConfig());
+    const port = await startHealthServer(0, () => scheduler!.getStates(), loadConfig());
+    expect(port).toBeGreaterThan(0);
     scheduler.start();
 
     // Wait for staggered startup to fire first few sources (2s stagger each)
