@@ -44,7 +44,15 @@ bun install
 bun link
 ```
 
-**Requirements:** [Bun](https://bun.sh) v1.0+, [Homebrew SQLite](https://formulae.brew.sh/formula/sqlite) (macOS), optionally [Ollama](https://ollama.com) for vector search.
+**Requirements:** [Bun](https://bun.sh) v1.0+, SQLite with development headers, optionally [Ollama](https://ollama.com) for vector search.
+
+**SQLite setup by platform:**
+
+- **macOS:** `brew install sqlite`
+- **Ubuntu/Debian:** `sudo apt-get install libsqlite3-dev`
+- **Fedora/RHEL:** `sudo dnf install sqlite-devel`
+
+The `sqlite-vec` extension is bundled and works on macOS (x64/arm64) and Linux (x64/arm64). No extra steps needed.
 
 Full walkthrough → **[Getting Started](docs/getting-started.md)**
 
