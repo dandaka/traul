@@ -35,7 +35,7 @@ describe("runSql", () => {
 
   it("executes PRAGMA queries", async () => {
     const { runSql } = await import("../../src/commands/sql");
-    const rows = runSql(db, "PRAGMA table_info(messages)");
+    const rows = runSql(db, "PRAGMA table_info(messages)") as Record<string, unknown>[];
     expect(rows.length).toBeGreaterThan(0);
     expect(rows[0]).toHaveProperty("name");
   });
@@ -102,7 +102,7 @@ describe("runSql", () => {
 
   it("allows EXPLAIN queries", async () => {
     const { runSql } = await import("../../src/commands/sql");
-    const rows = runSql(db, "EXPLAIN QUERY PLAN SELECT * FROM messages");
+    const rows = runSql(db, "EXPLAIN QUERY PLAN SELECT * FROM messages") as Record<string, unknown>[];
     expect(rows.length).toBeGreaterThan(0);
   });
 });
