@@ -30,7 +30,7 @@ export async function runWhatsAppAuth(config: TraulConfig, accountName: string):
       body: JSON.stringify({ name: session }),
     });
 
-    if (!startResp.ok && startResp.status !== 409) {
+    if (!startResp.ok && startResp.status !== 409 && startResp.status !== 422) {
       const body = await startResp.text();
       console.error(`Failed to start session: ${startResp.status} ${body}`);
       process.exit(1);
