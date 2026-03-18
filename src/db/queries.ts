@@ -228,6 +228,24 @@ export const GET_UNCHUNKED_LONG_MESSAGES = `
   LIMIT ?
 `;
 
+export const GET_THREAD = `
+  SELECT m.source, m.channel_name, m.thread_id,
+         m.author_name, m.content, m.sent_at, m.metadata
+  FROM messages m
+  WHERE m.thread_id = ?
+  ORDER BY m.sent_at ASC
+`;
+
+export const GET_THREADS_BY_DATE = `
+  SELECT m.source, m.channel_name, m.thread_id,
+         m.author_name, m.content, m.sent_at, m.metadata,
+         COUNT(*) OVER (PARTITION BY m.thread_id) AS thread_size
+  FROM messages m
+  WHERE m.thread_id IS NOT NULL
+    AND m.sent_at >= ? AND m.sent_at < ?
+  ORDER BY m.sent_at ASC
+`;
+
 export const GET_CHANNELS = `
   SELECT source, channel_name,
          COUNT(*) AS msg_count,

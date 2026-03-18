@@ -730,6 +730,18 @@ export class TraulDB {
     return this.db.query<MessageRow, (Uint8Array | string | number)[]>(sql).all(...params);
   }
 
+  getThread(threadId: string): MessageRow[] {
+    return this.db
+      .query<MessageRow, [string]>(Q.GET_THREAD)
+      .all(threadId);
+  }
+
+  getThreadsByDate(dayStart: number, dayEnd: number): MessageRow[] {
+    return this.db
+      .query<MessageRow, [number, number]>(Q.GET_THREADS_BY_DATE)
+      .all(dayStart, dayEnd);
+  }
+
   getDetailedStats(): {
     db_size: number;
     total_messages: number;

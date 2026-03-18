@@ -74,6 +74,7 @@ export async function runSearch(
       content: msg.content,
       channel: msg.channel_name,
       source: msg.source,
+      ...(msg.thread_id ? { thread_id: msg.thread_id } : {}),
       ...(msg.rank != null ? { rank: msg.rank } : {}),
     }));
     await writeJSON(jsonData);

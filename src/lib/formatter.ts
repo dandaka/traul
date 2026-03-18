@@ -13,8 +13,9 @@ export function formatMessage(msg: MessageRow): string {
   const time = formatTimestamp(msg.sent_at);
   const channel = msg.channel_name ? `#${msg.channel_name}` : msg.source;
   const author = msg.author_name ?? "unknown";
+  const thread = msg.thread_id ? `  [thread:${msg.thread_id.slice(0, 12)}]` : "";
   const content = truncate(msg.content.replace(/\n/g, " "), 120);
-  return `${time}  ${channel}  ${author}: ${content}`;
+  return `${time}  ${channel}  ${author}${thread}: ${content}`;
 }
 
 export function formatStats(stats: Stats): string {

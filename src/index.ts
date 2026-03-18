@@ -12,6 +12,7 @@ import { runStats } from "./commands/stats";
 import { runWhatsAppAuth } from "./commands/whatsapp-auth";
 import { runDaemonStart, runDaemonStop, runDaemonStatus } from "./commands/daemon";
 import { runSql, runSchema } from "./commands/sql";
+import { runGet } from "./commands/get";
 
 const config = loadConfig();
 ensureDbDir(config.database.path);
@@ -91,6 +92,17 @@ program
     options.after = options.after || options.from || options.start;
     options.before = options.before || options.to || options.end;
     await runMessages(db, channel, options);
+    db.close();
+  });
+
+program
+  .command("get")
+  .description("Get full thread/conversation by thread ID")
+  .argument("[thread-id]", "thread ID (e.g. Claude Code session UUID)")
+  .option("-d, --date <date>", "get all threads from a date (ISO 8601)")
+  .option("--json", "output as JSON")
+  .action(async (threadId: string | undefined, options) => {
+    await runGet(db, threadId, options);
     db.close();
   });
 
