@@ -61,6 +61,31 @@ Hybrid search combining vector similarity (semantic) and FTS5 keyword matching w
 | `--or` | Join terms with OR instead of AND (works with `--fts` and hybrid) |
 | `--like` | Substring match (LIKE) — bypasses FTS, useful for exact phrases |
 
+### `traul get [thread-id]`
+
+Retrieve a full conversation thread by its thread ID, or list all threads from a given date. Search results display thread IDs in the output so you can copy them for use with `get`.
+
+| Option | Description |
+|--------|-------------|
+| `thread-id` (positional) | Thread ID (e.g. Claude Code session UUID) |
+| `-d, --date <date>` | Get all threads from a date (ISO 8601) |
+| `--json` | Output as JSON |
+
+```bash
+# Search shows thread IDs in results
+traul search "mixpanel metrics"
+# → 2026-03-10 13:06  #base  claude  [thread:abc-123-uuid]: Let me try...
+
+# Get full conversation by thread ID
+traul get abc-123-session-uuid
+
+# List all threads from a specific date
+traul get --date 2026-03-10
+
+# JSON output
+traul get abc-123-session-uuid --json
+```
+
 ### `traul messages [channel]`
 
 Browse messages chronologically (no FTS required).
@@ -178,6 +203,7 @@ All `--json` outputs use clean, normalized field names (not raw SQL column names
 | `content` | string | Message content |
 | `channel` | string | Channel name |
 | `source` | string | Source connector name |
+| `thread_id` | string | Thread/session ID (optional, present when available) |
 | `rank` | number | Search relevance score (optional) |
 
 ---
@@ -312,7 +338,7 @@ ENV vars override config values. Empty `channels`/`chats` arrays = sync all.
 src/
   index.ts                  # CLI entry (Commander.js)
   commands/                 # Command handlers
-    sync.ts, search.ts, messages.ts, channels.ts, signals.ts, briefing.ts, sql.ts
+    sync.ts, search.ts, messages.ts, channels.ts, get.ts, signals.ts, briefing.ts, sql.ts
   connectors/               # Source adapters
     types.ts, slack.ts, telegram.ts, linear.ts, claude-code.ts, markdown.ts
   db/                       # Data layer
@@ -358,8 +384,12 @@ traul messages "general" --limit 20
 # Find channels matching a keyword
 traul channels --search "dev"
 
-# Search for a topic across all messages
+# Search for a topic (results include thread IDs)
 traul search "deployment issue" --after 2026-03-01
+
+# Get a full thread/conversation
+traul get <thread-id>
+traul get --date 2026-03-10
 
 # Exploratory search matching ANY term
 traul search "deposit withdraw broken" --fts --or
