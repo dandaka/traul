@@ -19,7 +19,12 @@ import { runMigrations } from "./db/migrations";
 const config = loadConfig();
 ensureDbDir(config.database.path);
 const db = await TraulDB.create(config.database.path);
-await runMigrations(db);
+const migrationResult = await runMigrations(db);
+
+if (migrationResult.embeddingsReset) {
+  console.log("Re-embedding all messages after migration...");
+  await runEmbed(db, { limit: "0", quiet: false });
+}
 
 const program = new Command();
 
