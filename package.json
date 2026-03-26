@@ -17,12 +17,12 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@libsql/client": "^0.17.2",
     "@slack/web-api": "^7.9.1",
     "commander": "^13.1.0",
     "googleapis": "^171.4.0",
     "html-to-text": "^9.0.5",
-    "node-llama-cpp": "^3.18.1",
-    "sqlite-vec": "^0.1.7-alpha.2"
+    "node-llama-cpp": "^3.18.1"
   },
   "devDependencies": {
     "@types/bun": "latest",
