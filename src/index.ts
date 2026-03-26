@@ -18,8 +18,8 @@ import { runMigrations } from "./db/migrations";
 
 const config = loadConfig();
 ensureDbDir(config.database.path);
-const db = new TraulDB(config.database.path);
-runMigrations(db);
+const db = await TraulDB.create(config.database.path);
+await runMigrations(db);
 
 const program = new Command();
 
@@ -46,7 +46,7 @@ program
 program
   .command("search")
   .description(
-    "Search messages (hybrid vector+keyword by default, requires Ollama)"
+    "Search messages (hybrid vector+keyword by default)"
   )
   .argument("<query>", "search query (natural language or keywords)")
   .option("-s, --source <source>", "filter by source")
@@ -146,7 +146,7 @@ program
   .argument("<layer>", "layer to reset: sync, chunks, embed, all")
   .option("-s, --source <source>", "filter by source (for sync layer)")
   .action(async (layer: string, options) => {
-    runReset(db, layer, options);
+    await runReset(db, layer, options);
     db.close();
   });
 
@@ -155,7 +155,7 @@ program
   .description("(deprecated: use 'traul reset embed') Drop all embeddings")
   .action(async () => {
     console.log("Note: 'reset-embed' is deprecated, use 'traul reset embed' instead.");
-    runReset(db, "embed", {});
+    await runReset(db, "embed", {});
     db.close();
   });
 
@@ -166,7 +166,7 @@ program
   .option("--json", "output as JSON (default)")
   .option("--write", "allow write operations (INSERT, UPDATE, DELETE, etc.)")
   .action(async (query: string, options) => {
-    const result = runSql(db, query, { write: options.write });
+    const result = await runSql(db, query, { write: options.write });
     if (options.json !== false) {
       const output = JSON.stringify(result, null, 2);
       process.stdout.write(output + "\n");
@@ -185,7 +185,7 @@ program
   .description("Show database schema (tables and columns)")
   .option("--json", "output as JSON")
   .action(async (options) => {
-    const tables = runSchema(db);
+    const tables = await runSchema(db);
     if (options.json) {
       const output = JSON.stringify(tables, null, 2);
       process.stdout.write(output + "\n");
