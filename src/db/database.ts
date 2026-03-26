@@ -1,4 +1,4 @@
-import { Database } from "bun:sqlite";
+import { type Client } from "@libsql/client";
 import { initializeDatabase } from "./schema";
 import * as Q from "./queries";
 
@@ -42,14 +42,20 @@ export interface Stats {
   total_contacts: number;
 }
 
-export class TraulDB {
-  db: Database;
+/** Convert Float32Array to Uint8Array for @libsql/client args. */
+function f32ToBytes(v: Float32Array): Uint8Array {
+  return new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
+}
 
-  constructor(path: string) {
-    this.db = initializeDatabase(path);
+export class TraulDB {
+  private constructor(private db: Client) {}
+
+  static async create(path: string): Promise<TraulDB> {
+    const db = await initializeDatabase(path);
+    return new TraulDB(db);
   }
 
-  upsertMessage(msg: {
+  async upsertMessage(msg: {
     source: string;
     source_id: string;
     channel_id?: string;
@@ -60,73 +66,88 @@ export class TraulDB {
     content: string;
     sent_at: number;
     metadata?: string;
-  }): void {
-    this.db.run(Q.UPSERT_MESSAGE, [
-      msg.source,
-      msg.source_id,
-      msg.channel_id ?? null,
-      msg.channel_name ?? null,
-      msg.thread_id ?? null,
-      msg.author_id ?? null,
-      msg.author_name ?? null,
-      msg.content,
-      msg.sent_at,
-      msg.metadata ?? null,
-    ]);
+  }): Promise<void> {
+    await this.db.execute({
+      sql: Q.UPSERT_MESSAGE,
+      args: [
+        msg.source,
+        msg.source_id,
+        msg.channel_id ?? null,
+        msg.channel_name ?? null,
+        msg.thread_id ?? null,
+        msg.author_id ?? null,
+        msg.author_name ?? null,
+        msg.content,
+        msg.sent_at,
+        msg.metadata ?? null,
+      ],
+    });
   }
 
-  upsertContact(displayName: string): number {
-    const row = this.db
-      .query<{ id: number }, [string]>(Q.UPSERT_CONTACT)
-      .get(displayName);
-    return row!.id;
+  async upsertContact(displayName: string): Promise<number> {
+    const result = await this.db.execute({
+      sql: Q.UPSERT_CONTACT,
+      args: [displayName],
+    });
+    return (result.rows[0] as any).id;
   }
 
-  upsertContactIdentity(identity: {
+  async upsertContactIdentity(identity: {
     contactId: number;
     source: string;
     sourceUserId: string;
     username?: string;
     displayName?: string;
-  }): void {
-    this.db.run(Q.UPSERT_CONTACT_IDENTITY, [
-      identity.contactId,
-      identity.source,
-      identity.sourceUserId,
-      identity.username ?? null,
-      identity.displayName ?? null,
-    ]);
+  }): Promise<void> {
+    await this.db.execute({
+      sql: Q.UPSERT_CONTACT_IDENTITY,
+      args: [
+        identity.contactId,
+        identity.source,
+        identity.sourceUserId,
+        identity.username ?? null,
+        identity.displayName ?? null,
+      ],
+    });
   }
 
-  getContactBySourceId(
+  async getContactBySourceId(
     source: string,
     sourceUserId: string
-  ): { id: number; display_name: string } | null {
-    return this.db
-      .query<{ id: number; display_name: string }, [string, string]>(
-        Q.GET_CONTACT_BY_SOURCE_ID
-      )
-      .get(source, sourceUserId);
+  ): Promise<{ id: number; display_name: string } | null> {
+    const result = await this.db.execute({
+      sql: Q.GET_CONTACT_BY_SOURCE_ID,
+      args: [source, sourceUserId],
+    });
+    if (result.rows.length === 0) return null;
+    return result.rows[0] as unknown as { id: number; display_name: string };
   }
 
-  hasMessage(source: string, sourceId: string): boolean {
-    return !!this.db
-      .query<{ "1": number }, [string, string]>(Q.HAS_MESSAGE)
-      .get(source, sourceId);
+  async hasMessage(source: string, sourceId: string): Promise<boolean> {
+    const result = await this.db.execute({
+      sql: Q.HAS_MESSAGE,
+      args: [source, sourceId],
+    });
+    return result.rows.length > 0;
   }
 
-  getSyncCursor(source: string, key: string): string | null {
-    const row = this.db
-      .query<{ cursor_value: string }, [string, string]>(Q.GET_SYNC_CURSOR)
-      .get(source, key);
-    return row?.cursor_value ?? null;
+  async getSyncCursor(source: string, key: string): Promise<string | null> {
+    const result = await this.db.execute({
+      sql: Q.GET_SYNC_CURSOR,
+      args: [source, key],
+    });
+    if (result.rows.length === 0) return null;
+    return (result.rows[0] as any).cursor_value ?? null;
   }
 
-  setSyncCursor(source: string, key: string, value: string): void {
-    this.db.run(Q.SET_SYNC_CURSOR, [source, key, value]);
+  async setSyncCursor(source: string, key: string, value: string): Promise<void> {
+    await this.db.execute({
+      sql: Q.SET_SYNC_CURSOR,
+      args: [source, key, value],
+    });
   }
 
-  searchMessages(
+  async searchMessages(
     query: string,
     options?: {
       source?: string;
@@ -135,7 +156,7 @@ export class TraulDB {
       before?: number;
       limit?: number;
     }
-  ): MessageRow[] {
+  ): Promise<MessageRow[]> {
     const limit = options?.limit ?? 20;
     const conditions: string[] = [];
     const params: (string | number)[] = [sanitizeFtsQuery(query)];
@@ -164,14 +185,16 @@ export class TraulDB {
     sql += " ORDER BY rank LIMIT ?";
     params.push(limit);
 
-    return this.db.query<MessageRow, (string | number)[]>(sql).all(...params);
+    const result = await this.db.execute({ sql, args: params });
+    return result.rows as unknown as MessageRow[];
   }
 
-  getStats(): Stats {
-    return this.db.query<Stats, []>(Q.GET_STATS).get()!;
+  async getStats(): Promise<Stats> {
+    const result = await this.db.execute(Q.GET_STATS);
+    return result.rows[0] as unknown as Stats;
   }
 
-  getMessages(options?: {
+  async getMessages(options?: {
     channel?: string;
     channelLike?: string;
     author?: string;
@@ -180,7 +203,7 @@ export class TraulDB {
     before?: number;
     limit?: number;
     asc?: boolean;
-  }): MessageRow[] {
+  }): Promise<MessageRow[]> {
     const limit = options?.limit ?? 50;
     const conditions: string[] = [];
     const params: (string | number)[] = [];
@@ -217,13 +240,14 @@ export class TraulDB {
     sql += ` ORDER BY m.sent_at ${options?.asc ? "ASC" : "DESC"} LIMIT ?`;
     params.push(limit);
 
-    return this.db.query<MessageRow, (string | number)[]>(sql).all(...params);
+    const result = await this.db.execute({ sql, args: params });
+    return result.rows as unknown as MessageRow[];
   }
 
-  getChannels(options?: {
+  async getChannels(options?: {
     source?: string;
     search?: string;
-  }): Array<{ source: string; channel_name: string; msg_count: number; last_message: number }> {
+  }): Promise<Array<{ source: string; channel_name: string; msg_count: number; last_message: number }>> {
     const conditions: string[] = [];
     const params: (string | number)[] = [];
 
@@ -241,23 +265,27 @@ export class TraulDB {
       sql = sql.replace("WHERE 1=1", "WHERE 1=1 AND " + conditions.join(" AND "));
     }
 
-    return this.db
-      .query<{ source: string; channel_name: string; msg_count: number; last_message: number }, (string | number)[]>(sql)
-      .all(...params);
+    const result = await this.db.execute({ sql, args: params });
+    return result.rows as unknown as Array<{ source: string; channel_name: string; msg_count: number; last_message: number }>;
   }
 
-  insertEmbedding(messageId: number, embedding: Uint8Array): void {
-    this.db.run(Q.INSERT_EMBEDDING, [messageId, embedding]);
+  async insertEmbedding(messageId: number, embedding: Float32Array): Promise<void> {
+    await this.db.execute({
+      sql: Q.INSERT_EMBEDDING,
+      args: [f32ToBytes(embedding), messageId],
+    });
   }
 
-  getUnembeddedMessages(limit: number = 100): Array<{ id: number; content: string }> {
-    return this.db
-      .query<{ id: number; content: string }, [number]>(Q.GET_UNEMBEDDED_MESSAGES)
-      .all(limit);
+  async getUnembeddedMessages(limit: number = 100): Promise<Array<{ id: number; content: string }>> {
+    const result = await this.db.execute({
+      sql: Q.GET_UNEMBEDDED_MESSAGES,
+      args: [limit],
+    });
+    return result.rows as unknown as Array<{ id: number; content: string }>;
   }
 
-  vectorSearch(
-    embedding: Uint8Array,
+  async vectorSearch(
+    embedding: Float32Array,
     options?: {
       source?: string;
       channel?: string;
@@ -265,10 +293,10 @@ export class TraulDB {
       before?: number;
       limit?: number;
     }
-  ): MessageRow[] {
+  ): Promise<MessageRow[]> {
     const k = options?.limit ?? 20;
     const conditions: string[] = [];
-    const params: (Uint8Array | string | number)[] = [embedding, k];
+    const params: (Uint8Array | string | number)[] = [f32ToBytes(embedding), k];
 
     if (options?.source) {
       conditions.push("m.source = ?");
@@ -292,11 +320,12 @@ export class TraulDB {
       sql += " AND " + conditions.join(" AND ");
     }
 
-    return this.db.query<MessageRow, (Uint8Array | string | number)[]>(sql).all(...params);
+    const result = await this.db.execute({ sql, args: params as any });
+    return result.rows as unknown as MessageRow[];
   }
 
-  vectorSearchAll(
-    embedding: Uint8Array,
+  async vectorSearchAll(
+    embedding: Float32Array,
     options?: {
       source?: string;
       channel?: string;
@@ -304,17 +333,17 @@ export class TraulDB {
       before?: number;
       limit?: number;
     }
-  ): MessageRow[] {
+  ): Promise<MessageRow[]> {
     const limit = options?.limit ?? 20;
     const k = limit * 3;
 
-    const vecMessages = this.vectorSearch(embedding, { ...options, limit: k });
-    const vecChunks = this.vectorSearchChunks(embedding, { ...options, limit: k });
+    const vecMessages = await this.vectorSearch(embedding, { ...options, limit: k });
+    const vecChunks = await this.vectorSearchChunks(embedding, { ...options, limit: k });
 
     return this.rrfMerge([vecMessages, vecChunks], limit);
   }
 
-  ftsSearchAll(
+  async ftsSearchAll(
     query: string,
     options?: {
       source?: string;
@@ -323,18 +352,18 @@ export class TraulDB {
       before?: number;
       limit?: number;
     }
-  ): MessageRow[] {
+  ): Promise<MessageRow[]> {
     const limit = options?.limit ?? 20;
     const k = limit * 3;
 
-    const ftsMessages = this.searchMessages(query, { ...options, limit: k });
-    const ftsChunks = this.searchChunks(query, { ...options, limit: k });
+    const ftsMessages = await this.searchMessages(query, { ...options, limit: k });
+    const ftsChunks = await this.searchChunks(query, { ...options, limit: k });
 
     return this.rrfMerge([ftsMessages, ftsChunks], limit);
   }
 
   /** FTS search only unembedded messages (backfill for cold start) */
-  private ftsBackfillMessages(
+  private async ftsBackfillMessages(
     query: string,
     options?: {
       source?: string;
@@ -343,7 +372,7 @@ export class TraulDB {
       before?: number;
       limit?: number;
     }
-  ): MessageRow[] {
+  ): Promise<MessageRow[]> {
     const limit = options?.limit ?? 20;
     const conditions: string[] = [];
     const params: (string | number)[] = [sanitizeFtsQuery(query)];
@@ -372,11 +401,12 @@ export class TraulDB {
     sql += " ORDER BY rank LIMIT ?";
     params.push(limit);
 
-    return this.db.query<MessageRow, (string | number)[]>(sql).all(...params);
+    const result = await this.db.execute({ sql, args: params });
+    return result.rows as unknown as MessageRow[];
   }
 
   /** FTS search only unembedded chunks (backfill for cold start) */
-  private ftsBackfillChunks(
+  private async ftsBackfillChunks(
     query: string,
     options?: {
       source?: string;
@@ -385,7 +415,7 @@ export class TraulDB {
       before?: number;
       limit?: number;
     }
-  ): MessageRow[] {
+  ): Promise<MessageRow[]> {
     const limit = options?.limit ?? 20;
     const conditions: string[] = [];
     const params: (string | number)[] = [sanitizeFtsQuery(query)];
@@ -414,12 +444,13 @@ export class TraulDB {
     sql += " ORDER BY rank LIMIT ?";
     params.push(limit);
 
-    return this.db.query<MessageRow, (string | number)[]>(sql).all(...params);
+    const result = await this.db.execute({ sql, args: params });
+    return result.rows as unknown as MessageRow[];
   }
 
   /** Hybrid search: vector for embedded messages, FTS backfill for the rest */
-  hybridSearchAll(
-    embedding: Uint8Array,
+  async hybridSearchAll(
+    embedding: Float32Array,
     query: string,
     options?: {
       source?: string;
@@ -428,18 +459,18 @@ export class TraulDB {
       before?: number;
       limit?: number;
     }
-  ): MessageRow[] {
+  ): Promise<MessageRow[]> {
     const limit = options?.limit ?? 20;
     const k = limit * 3;
 
     // Vector search over embedded content
-    const vecMessages = this.vectorSearch(embedding, { ...options, limit: k });
-    const vecChunks = this.vectorSearchChunks(embedding, { ...options, limit: k });
+    const vecMessages = await this.vectorSearch(embedding, { ...options, limit: k });
+    const vecChunks = await this.vectorSearchChunks(embedding, { ...options, limit: k });
     const vectorResults = this.rrfMerge([vecMessages, vecChunks], limit);
 
     // FTS backfill over unembedded content only
-    const backfillMessages = this.ftsBackfillMessages(query, { ...options, limit: k });
-    const backfillChunks = this.ftsBackfillChunks(query, { ...options, limit: k });
+    const backfillMessages = await this.ftsBackfillMessages(query, { ...options, limit: k });
+    const backfillChunks = await this.ftsBackfillChunks(query, { ...options, limit: k });
     const backfillResults = this.rrfMerge([backfillMessages, backfillChunks], limit);
 
     // Vector results first, then backfill (deduped by message id)
@@ -460,7 +491,7 @@ export class TraulDB {
     return combined;
   }
 
-  likeSearchAll(
+  async likeSearchAll(
     query: string,
     options?: {
       source?: string;
@@ -469,17 +500,17 @@ export class TraulDB {
       before?: number;
       limit?: number;
     }
-  ): MessageRow[] {
+  ): Promise<MessageRow[]> {
     const limit = options?.limit ?? 20;
     const k = limit * 3;
 
-    const likeMessages = this.likeSearchMessages(query, { ...options, limit: k });
-    const likeChunks = this.likeSearchChunks(query, { ...options, limit: k });
+    const likeMessages = await this.likeSearchMessages(query, { ...options, limit: k });
+    const likeChunks = await this.likeSearchChunks(query, { ...options, limit: k });
 
     return this.rrfMerge([likeMessages, likeChunks], limit);
   }
 
-  private likeSearchMessages(
+  private async likeSearchMessages(
     query: string,
     options?: {
       source?: string;
@@ -488,7 +519,7 @@ export class TraulDB {
       before?: number;
       limit?: number;
     }
-  ): MessageRow[] {
+  ): Promise<MessageRow[]> {
     const limit = options?.limit ?? 20;
     const conditions: string[] = [];
     const params: (string | number)[] = [query];
@@ -517,10 +548,11 @@ export class TraulDB {
     sql += " ORDER BY m.sent_at DESC LIMIT ?";
     params.push(limit);
 
-    return this.db.query<MessageRow, (string | number)[]>(sql).all(...params);
+    const result = await this.db.execute({ sql, args: params });
+    return result.rows as unknown as MessageRow[];
   }
 
-  private likeSearchChunks(
+  private async likeSearchChunks(
     query: string,
     options?: {
       source?: string;
@@ -529,7 +561,7 @@ export class TraulDB {
       before?: number;
       limit?: number;
     }
-  ): MessageRow[] {
+  ): Promise<MessageRow[]> {
     const limit = options?.limit ?? 20;
     const conditions: string[] = [];
     const params: (string | number)[] = [query];
@@ -558,7 +590,8 @@ export class TraulDB {
     sql += " ORDER BY m.sent_at DESC LIMIT ?";
     params.push(limit);
 
-    return this.db.query<MessageRow, (string | number)[]>(sql).all(...params);
+    const result = await this.db.execute({ sql, args: params });
+    return result.rows as unknown as MessageRow[];
   }
 
   private rrfMerge(resultSets: MessageRow[][], limit: number): MessageRow[] {
@@ -584,73 +617,74 @@ export class TraulDB {
       .map((s) => s.msg);
   }
 
-  getEmbeddingStats(): EmbeddingStats {
-    return this.db.query<EmbeddingStats, []>(Q.EMBEDDING_STATS).get()!;
+  async getEmbeddingStats(): Promise<EmbeddingStats> {
+    const result = await this.db.execute(Q.EMBEDDING_STATS);
+    return result.rows[0] as unknown as EmbeddingStats;
   }
 
-  deleteOrphanedEmbeddings(): number {
-    return this.db.run(Q.DELETE_ORPHANED_EMBEDDINGS).changes;
+  async deleteOrphanedEmbeddings(): Promise<number> {
+    const result = await this.db.execute(Q.DELETE_ORPHANED_EMBEDDINGS);
+    return result.rowsAffected;
   }
 
-  deleteOrphanedChunkEmbeddings(): number {
-    return this.db.run(Q.DELETE_ORPHANED_CHUNK_EMBEDDINGS).changes;
+  async deleteOrphanedChunkEmbeddings(): Promise<number> {
+    const result = await this.db.execute(Q.DELETE_ORPHANED_CHUNK_EMBEDDINGS);
+    return result.rowsAffected;
   }
 
-  deleteOrphanedChunks(): number {
-    return this.db.run(Q.DELETE_ORPHANED_CHUNKS).changes;
+  async deleteOrphanedChunks(): Promise<number> {
+    const result = await this.db.execute(Q.DELETE_ORPHANED_CHUNKS);
+    return result.rowsAffected;
   }
 
-  replaceChunks(messageId: number, chunks: Array<{ index: number; content: string; embeddingInput: string }>): void {
-    // Delete old chunk embeddings first
-    const oldChunkIds = this.db
-      .query<{ id: number }, [number]>(Q.GET_MESSAGE_CHUNK_IDS)
-      .all(messageId);
-    for (const { id } of oldChunkIds) {
-      this.db.run("DELETE FROM vec_chunks WHERE chunk_id = ?", [id]);
-    }
-
-    this.db.run(Q.REPLACE_CHUNKS_DELETE, [messageId]);
+  async replaceChunks(messageId: number, chunks: Array<{ index: number; content: string; embeddingInput: string }>): Promise<void> {
+    await this.db.execute({ sql: Q.REPLACE_CHUNKS_DELETE, args: [messageId] });
     for (const chunk of chunks) {
-      this.db.run(Q.INSERT_CHUNK, [messageId, chunk.index, chunk.content, chunk.embeddingInput]);
+      await this.db.execute({ sql: Q.INSERT_CHUNK, args: [messageId, chunk.index, chunk.content, chunk.embeddingInput] });
     }
   }
 
-  getUnchunkedLongMessages(threshold: number, limit: number): Array<{ id: number; content: string }> {
-    return this.db
-      .query<{ id: number; content: string }, [number, number]>(Q.GET_UNCHUNKED_LONG_MESSAGES)
-      .all(threshold, limit);
+  async getUnchunkedLongMessages(threshold: number, limit: number): Promise<Array<{ id: number; content: string }>> {
+    const result = await this.db.execute({
+      sql: Q.GET_UNCHUNKED_LONG_MESSAGES,
+      args: [threshold, limit],
+    });
+    return result.rows as unknown as Array<{ id: number; content: string }>;
   }
 
-  deleteMessageEmbedding(messageId: number): void {
-    this.db.run("DELETE FROM vec_messages WHERE message_id = ?", [messageId]);
+  async deleteMessageEmbedding(messageId: number): Promise<void> {
+    await this.db.execute({
+      sql: "UPDATE messages SET embedding = NULL WHERE id = ?",
+      args: [messageId],
+    });
   }
 
-  getUnembeddedChunks(limit: number = 100): Array<{ id: number; content: string }> {
-    return this.db
-      .query<{ id: number; content: string }, [number]>(Q.GET_UNEMBEDDED_CHUNKS)
-      .all(limit);
+  async getUnembeddedChunks(limit: number = 100): Promise<Array<{ id: number; content: string }>> {
+    const result = await this.db.execute({
+      sql: Q.GET_UNEMBEDDED_CHUNKS,
+      args: [limit],
+    });
+    return result.rows as unknown as Array<{ id: number; content: string }>;
   }
 
-  insertChunkEmbedding(chunkId: number, embedding: Uint8Array): void {
-    this.db.run(Q.INSERT_CHUNK_EMBEDDING, [chunkId, embedding]);
+  async insertChunkEmbedding(chunkId: number, embedding: Float32Array): Promise<void> {
+    await this.db.execute({
+      sql: Q.INSERT_CHUNK_EMBEDDING,
+      args: [f32ToBytes(embedding), chunkId],
+    });
   }
 
-  getChunkEmbeddingStats(): ChunkEmbeddingStats {
-    return this.db.query<ChunkEmbeddingStats, []>(Q.CHUNK_EMBEDDING_STATS).get()!;
+  async getChunkEmbeddingStats(): Promise<ChunkEmbeddingStats> {
+    const result = await this.db.execute(Q.CHUNK_EMBEDDING_STATS);
+    return result.rows[0] as unknown as ChunkEmbeddingStats;
   }
 
-  resetEmbeddings(dims: number): void {
-    this.db.run("DROP TABLE IF EXISTS vec_messages");
-    this.db.run("DROP TABLE IF EXISTS vec_chunks");
-    this.db.exec(
-      `CREATE VIRTUAL TABLE vec_messages USING vec0(message_id INTEGER PRIMARY KEY, embedding float[${dims}])`
-    );
-    this.db.exec(
-      `CREATE VIRTUAL TABLE vec_chunks USING vec0(chunk_id INTEGER PRIMARY KEY, embedding float[${dims}])`
-    );
+  async resetEmbeddings(): Promise<void> {
+    await this.db.execute("UPDATE messages SET embedding = NULL");
+    await this.db.execute("UPDATE chunks SET embedding = NULL");
   }
 
-  searchChunks(
+  async searchChunks(
     query: string,
     options?: {
       source?: string;
@@ -659,7 +693,7 @@ export class TraulDB {
       before?: number;
       limit?: number;
     }
-  ): MessageRow[] {
+  ): Promise<MessageRow[]> {
     const limit = options?.limit ?? 20;
     const conditions: string[] = [];
     const params: (string | number)[] = [sanitizeFtsQuery(query)];
@@ -688,11 +722,12 @@ export class TraulDB {
     sql += " ORDER BY rank LIMIT ?";
     params.push(limit);
 
-    return this.db.query<MessageRow, (string | number)[]>(sql).all(...params);
+    const result = await this.db.execute({ sql, args: params });
+    return result.rows as unknown as MessageRow[];
   }
 
-  vectorSearchChunks(
-    embedding: Uint8Array,
+  async vectorSearchChunks(
+    embedding: Float32Array,
     options?: {
       source?: string;
       channel?: string;
@@ -700,10 +735,10 @@ export class TraulDB {
       before?: number;
       limit?: number;
     }
-  ): MessageRow[] {
+  ): Promise<MessageRow[]> {
     const k = options?.limit ?? 20;
     const conditions: string[] = [];
-    const params: (Uint8Array | string | number)[] = [embedding, k];
+    const params: (Uint8Array | string | number)[] = [f32ToBytes(embedding), k];
 
     if (options?.source) {
       conditions.push("m.source = ?");
@@ -727,22 +762,27 @@ export class TraulDB {
       sql += " AND " + conditions.join(" AND ");
     }
 
-    return this.db.query<MessageRow, (Uint8Array | string | number)[]>(sql).all(...params);
+    const result = await this.db.execute({ sql, args: params as any });
+    return result.rows as unknown as MessageRow[];
   }
 
-  getThread(threadId: string): MessageRow[] {
-    return this.db
-      .query<MessageRow, [string]>(Q.GET_THREAD)
-      .all(threadId);
+  async getThread(threadId: string): Promise<MessageRow[]> {
+    const result = await this.db.execute({
+      sql: Q.GET_THREAD,
+      args: [threadId],
+    });
+    return result.rows as unknown as MessageRow[];
   }
 
-  getThreadsByDate(dayStart: number, dayEnd: number): MessageRow[] {
-    return this.db
-      .query<MessageRow, [number, number]>(Q.GET_THREADS_BY_DATE)
-      .all(dayStart, dayEnd);
+  async getThreadsByDate(dayStart: number, dayEnd: number): Promise<MessageRow[]> {
+    const result = await this.db.execute({
+      sql: Q.GET_THREADS_BY_DATE,
+      args: [dayStart, dayEnd],
+    });
+    return result.rows as unknown as MessageRow[];
   }
 
-  getDetailedStats(): {
+  async getDetailedStats(): Promise<{
     db_size: number;
     total_messages: number;
     total_channels: number;
@@ -751,16 +791,15 @@ export class TraulDB {
     embedded_messages: number;
     total_chunks: number;
     embedded_chunks: number;
-  } {
-    const stats = this.getStats();
-    const embStats = this.getEmbeddingStats();
-    const chunkStats = this.getChunkEmbeddingStats();
+  }> {
+    const stats = await this.getStats();
+    const embStats = await this.getEmbeddingStats();
+    const chunkStats = await this.getChunkEmbeddingStats();
 
-    const sizeRow = this.db
-      .query<{ page_count: number; page_size: number }, []>(
-        "SELECT (SELECT page_count FROM pragma_page_count) AS page_count, (SELECT page_size FROM pragma_page_size) AS page_size"
-      )
-      .get()!;
+    const sizeResult = await this.db.execute(
+      "SELECT (SELECT page_count FROM pragma_page_count) AS page_count, (SELECT page_size FROM pragma_page_size) AS page_size"
+    );
+    const sizeRow = sizeResult.rows[0] as any;
     const db_size = sizeRow.page_count * sizeRow.page_size;
 
     return {
@@ -773,77 +812,74 @@ export class TraulDB {
     };
   }
 
-  getStatsBySource(): Array<{
+  async getStatsBySource(): Promise<Array<{
     source: string;
     messages: number;
     channels: number;
     chunks: number;
-  }> {
-    return this.db
-      .query<{ source: string; messages: number; channels: number; chunks: number }, []>(
-        `SELECT m.source,
-                COUNT(DISTINCT m.id) AS messages,
-                COUNT(DISTINCT m.channel_name) AS channels,
-                (SELECT COUNT(*) FROM chunks c WHERE c.message_id IN (SELECT id FROM messages WHERE source = m.source)) AS chunks
-         FROM messages m
-         GROUP BY m.source
-         ORDER BY messages DESC`
-      )
-      .all();
-  }
-
-  getMessagesBySource(source: string): Array<{ id: number; source_id: string; metadata: string | null }> {
-    return this.db
-      .query<{ id: number; source_id: string; metadata: string | null }, [string]>(
-        "SELECT id, source_id, metadata FROM messages WHERE source = ?"
-      )
-      .all(source);
-  }
-
-  deleteMessage(id: number): void {
-    // Delete chunks and their embeddings first
-    const chunkIds = this.db
-      .query<{ id: number }, [number]>("SELECT id FROM chunks WHERE message_id = ?")
-      .all(id);
-    for (const { id: chunkId } of chunkIds) {
-      this.db.run("DELETE FROM vec_chunks WHERE chunk_id = ?", [chunkId]);
-    }
-    this.db.run("DELETE FROM chunks WHERE message_id = ?", [id]);
-    this.db.run("DELETE FROM vec_messages WHERE message_id = ?", [id]);
-    this.db.run("DELETE FROM messages WHERE id = ?", [id]);
-  }
-
-  deleteSyncCursor(source: string, key: string): void {
-    this.db.run("DELETE FROM sync_cursors WHERE source = ? AND key = ?", [source, key]);
-  }
-
-  resetSyncCursors(source?: string): void {
-    if (source) {
-      this.db.run("DELETE FROM sync_cursors WHERE source = ?", [source]);
-    } else {
-      this.db.run("DELETE FROM sync_cursors");
-    }
-  }
-
-  resetChunks(): void {
-    this.db.run("DELETE FROM vec_chunks");
-    this.db.run("DELETE FROM chunks");
-  }
-
-  getMeta(key: string): string | null {
-    const row = this.db
-      .query<{ value: string }, [string]>(
-        "SELECT value FROM traul_meta WHERE key = ?"
-      )
-      .get(key);
-    return row?.value ?? null;
-  }
-
-  setMeta(key: string, value: string): void {
-    this.db.run(
-      "INSERT INTO traul_meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-      [key, value]
+  }>> {
+    const result = await this.db.execute(
+      `SELECT m.source,
+              COUNT(DISTINCT m.id) AS messages,
+              COUNT(DISTINCT m.channel_name) AS channels,
+              (SELECT COUNT(*) FROM chunks c WHERE c.message_id IN (SELECT id FROM messages WHERE source = m.source)) AS chunks
+       FROM messages m
+       GROUP BY m.source
+       ORDER BY messages DESC`
     );
+    return result.rows as unknown as Array<{ source: string; messages: number; channels: number; chunks: number }>;
+  }
+
+  async getMessagesBySource(source: string): Promise<Array<{ id: number; source_id: string; metadata: string | null }>> {
+    const result = await this.db.execute({
+      sql: "SELECT id, source_id, metadata FROM messages WHERE source = ?",
+      args: [source],
+    });
+    return result.rows as unknown as Array<{ id: number; source_id: string; metadata: string | null }>;
+  }
+
+  async deleteMessage(id: number): Promise<void> {
+    await this.db.execute({ sql: "DELETE FROM chunks WHERE message_id = ?", args: [id] });
+    await this.db.execute({ sql: "DELETE FROM messages WHERE id = ?", args: [id] });
+  }
+
+  async deleteSyncCursor(source: string, key: string): Promise<void> {
+    await this.db.execute({
+      sql: "DELETE FROM sync_cursors WHERE source = ? AND key = ?",
+      args: [source, key],
+    });
+  }
+
+  async resetSyncCursors(source?: string): Promise<void> {
+    if (source) {
+      await this.db.execute({ sql: "DELETE FROM sync_cursors WHERE source = ?", args: [source] });
+    } else {
+      await this.db.execute("DELETE FROM sync_cursors");
+    }
+  }
+
+  async resetChunks(): Promise<void> {
+    await this.db.execute("DELETE FROM chunks");
+  }
+
+  async getMeta(key: string): Promise<string | null> {
+    const result = await this.db.execute({
+      sql: "SELECT value FROM traul_meta WHERE key = ?",
+      args: [key],
+    });
+    if (result.rows.length === 0) return null;
+    return (result.rows[0] as any).value ?? null;
+  }
+
+  async setMeta(key: string, value: string): Promise<void> {
+    await this.db.execute({
+      sql: "INSERT INTO traul_meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+      args: [key, value],
+    });
+  }
+
+  async execute(sql: string): Promise<any> {
+    return this.db.execute(sql);
   }
 
   close(): void {
