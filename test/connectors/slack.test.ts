@@ -8,7 +8,7 @@ describe("Slack connector", () => {
 
   it("returns zero counts when no token configured", async () => {
     const { TraulDB } = await import("../../src/db/database");
-    const db = new TraulDB(":memory:");
+    const db = await TraulDB.create(":memory:");
     const config = {
       database: { path: ":memory:" },
       slack: { token: "", my_user_id: "", channels: [] },

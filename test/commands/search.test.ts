@@ -3,19 +3,19 @@ import { TraulDB } from "../../src/db/database";
 import { EMBED_DIMS } from "../../src/lib/embeddings";
 import { runSearch } from "../../src/commands/search";
 
-function fakeEmbedding(): Uint8Array {
+function fakeEmbedding(): Float32Array {
   const vec = new Float32Array(EMBED_DIMS);
   for (let i = 0; i < EMBED_DIMS; i++) vec[i] = Math.random() - 0.5;
-  return new Uint8Array(vec.buffer);
+  return vec;
 }
 
 describe("Search command logic", () => {
   let db: TraulDB;
 
-  beforeEach(() => {
-    db = new TraulDB(":memory:");
+  beforeEach(async () => {
+    db = await TraulDB.create(":memory:");
 
-    db.upsertMessage({
+    await db.upsertMessage({
       source: "slack",
       source_id: "C1:1",
       channel_name: "engineering",
@@ -23,7 +23,7 @@ describe("Search command logic", () => {
       content: "We need to fix the API rate limiting before launch",
       sent_at: 1700000000,
     });
-    db.upsertMessage({
+    await db.upsertMessage({
       source: "slack",
       source_id: "C1:2",
       channel_name: "engineering",
@@ -31,7 +31,7 @@ describe("Search command logic", () => {
       content: "The database migration script failed on staging",
       sent_at: 1700000100,
     });
-    db.upsertMessage({
+    await db.upsertMessage({
       source: "slack",
       source_id: "C2:1",
       channel_name: "product",
@@ -41,24 +41,24 @@ describe("Search command logic", () => {
     });
   });
 
-  it("searches by keyword", () => {
-    const results = db.searchMessages("API");
+  it("searches by keyword", async () => {
+    const results = await db.searchMessages("API");
     expect(results.length).toBe(2);
   });
 
-  it("filters by source", () => {
-    const results = db.searchMessages("API", { source: "slack" });
+  it("filters by source", async () => {
+    const results = await db.searchMessages("API", { source: "slack" });
     expect(results.length).toBe(2);
   });
 
-  it("filters by channel", () => {
-    const results = db.searchMessages("API", { channel: "engineering" });
+  it("filters by channel", async () => {
+    const results = await db.searchMessages("API", { channel: "engineering" });
     expect(results.length).toBe(1);
     expect(results[0].author_name).toBe("alice");
   });
 
-  it("filters by time range", () => {
-    const results = db.searchMessages("API", {
+  it("filters by time range", async () => {
+    const results = await db.searchMessages("API", {
       after: 1700000050,
     });
     // Only carol's message should match (after the cutoff)
@@ -66,8 +66,8 @@ describe("Search command logic", () => {
     expect(results[0].author_name).toBe("carol");
   });
 
-  it("filters by channel substring", () => {
-    db.upsertMessage({
+  it("filters by channel substring", async () => {
+    await db.upsertMessage({
       source: "markdown",
       source_id: "book:1",
       channel_name: "books/books",
@@ -77,16 +77,16 @@ describe("Search command logic", () => {
     });
 
     // Exact prefix should match
-    const results = db.searchMessages("feedback", { channel: "books" });
+    const results = await db.searchMessages("feedback", { channel: "books" });
     expect(results.length).toBe(1);
     expect(results[0].channel_name).toBe("books/books");
 
     // Full name should also match
-    const results2 = db.searchMessages("feedback", { channel: "books/books" });
+    const results2 = await db.searchMessages("feedback", { channel: "books/books" });
     expect(results2.length).toBe(1);
 
     // Non-matching substring should return nothing
-    const results3 = db.searchMessages("feedback", { channel: "slack" });
+    const results3 = await db.searchMessages("feedback", { channel: "slack" });
     expect(results3.length).toBe(0);
   });
 });
@@ -96,8 +96,8 @@ describe("runSearch empty results output", () => {
   let logSpy: ReturnType<typeof spyOn>;
   let warnSpy: ReturnType<typeof spyOn>;
 
-  beforeEach(() => {
-    db = new TraulDB(":memory:");
+  beforeEach(async () => {
+    db = await TraulDB.create(":memory:");
     logSpy = spyOn(console, "log").mockImplementation(() => {});
     warnSpy = spyOn(console, "warn").mockImplementation(() => {});
   });
@@ -127,11 +127,11 @@ describe("runSearch empty results output", () => {
 describe("Hybrid search", () => {
   let db: TraulDB;
 
-  beforeEach(() => {
-    db = new TraulDB(":memory:");
+  beforeEach(async () => {
+    db = await TraulDB.create(":memory:");
 
     // Message 1: will be embedded
-    db.upsertMessage({
+    await db.upsertMessage({
       source: "slack",
       source_id: "C1:1",
       channel_name: "eng",
@@ -141,7 +141,7 @@ describe("Hybrid search", () => {
     });
 
     // Message 2: will NOT be embedded (FTS backfill target)
-    db.upsertMessage({
+    await db.upsertMessage({
       source: "slack",
       source_id: "C1:2",
       channel_name: "eng",
@@ -151,7 +151,7 @@ describe("Hybrid search", () => {
     });
 
     // Message 3: unrelated
-    db.upsertMessage({
+    await db.upsertMessage({
       source: "slack",
       source_id: "C1:3",
       channel_name: "random",
@@ -161,15 +161,14 @@ describe("Hybrid search", () => {
     });
 
     // Embed only message 1
-    const msg1 = db.db
-      .query<{ id: number }, [string]>("SELECT id FROM messages WHERE source_id = ?")
-      .get("C1:1");
-    db.insertEmbedding(msg1!.id, fakeEmbedding());
+    const msgs = await db.getMessages({ limit: 10 });
+    const msg1 = msgs.find(m => m.source_id === "C1:1");
+    await db.insertEmbedding(msg1!.id, fakeEmbedding());
   });
 
-  it("hybridSearchAll returns vector results first, then FTS backfill", () => {
+  it("hybridSearchAll returns vector results first, then FTS backfill", async () => {
     const queryEmbedding = fakeEmbedding();
-    const results = db.hybridSearchAll(queryEmbedding, "deployment", { limit: 10 });
+    const results = await db.hybridSearchAll(queryEmbedding, "deployment", { limit: 10 });
 
     // Should find both deployment messages
     expect(results.length).toBe(2);
@@ -181,14 +180,13 @@ describe("Hybrid search", () => {
     expect(results[1].content).toContain("deployment script");
   });
 
-  it("hybridSearchAll deduplicates results", () => {
-    // Embed message 2 as well — both messages now have embeddings
-    const msg2 = db.db
-      .query<{ id: number }, [string]>("SELECT id FROM messages WHERE source_id = ?")
-      .get("C1:2");
-    db.insertEmbedding(msg2!.id, fakeEmbedding());
+  it("hybridSearchAll deduplicates results", async () => {
+    // Embed message 2 as well -- both messages now have embeddings
+    const msgs = await db.getMessages({ limit: 10 });
+    const msg2 = msgs.find(m => m.source_id === "C1:2");
+    await db.insertEmbedding(msg2!.id, fakeEmbedding());
 
-    const results = db.hybridSearchAll(fakeEmbedding(), "deployment", { limit: 10 });
+    const results = await db.hybridSearchAll(fakeEmbedding(), "deployment", { limit: 10 });
 
     // Should still only have 2 results (no duplicates), and FTS backfill should find nothing
     const ids = results.map((r) => r.id);
@@ -196,13 +194,13 @@ describe("Hybrid search", () => {
     expect(uniqueIds.size).toBe(ids.length);
   });
 
-  it("hybridSearchAll respects limit", () => {
-    const results = db.hybridSearchAll(fakeEmbedding(), "deployment", { limit: 1 });
+  it("hybridSearchAll respects limit", async () => {
+    const results = await db.hybridSearchAll(fakeEmbedding(), "deployment", { limit: 1 });
     expect(results.length).toBe(1);
   });
 
-  it("hybridSearchAll filters by channel", () => {
-    const results = db.hybridSearchAll(fakeEmbedding(), "deployment", {
+  it("hybridSearchAll filters by channel", async () => {
+    const results = await db.hybridSearchAll(fakeEmbedding(), "deployment", {
       channel: "random",
       limit: 10,
     });
@@ -211,8 +209,8 @@ describe("Hybrid search", () => {
     expect(results.length).toBe(0);
   });
 
-  it("ftsSearchAll still works independently for --fts flag", () => {
-    const results = db.ftsSearchAll("deployment", { limit: 10 });
+  it("ftsSearchAll still works independently for --fts flag", async () => {
+    const results = await db.ftsSearchAll("deployment", { limit: 10 });
 
     // Should find both deployment messages regardless of embedding status
     expect(results.length).toBe(2);

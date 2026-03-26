@@ -108,7 +108,7 @@ describe("Discord connector", () => {
   });
 
   it("returns zero counts when no token configured", async () => {
-    const db = new TraulDB(":memory:");
+    const db = await TraulDB.create(":memory:");
     const config = {
       sync_start: "",
       database: { path: ":memory:" },
