@@ -145,7 +145,7 @@ export const telegramConnector: Connector = {
       }));
     } else {
       log.info("  Listing all Telegram chats...");
-      const lastGlobalSync = db.getSyncCursor("telegram", "last_sync");
+      const lastGlobalSync = await db.getSyncCursor("telegram", "last_sync");
       const since = lastGlobalSync
         ? new Date(parseInt(lastGlobalSync)).toISOString()
         : undefined;
@@ -166,7 +166,7 @@ export const telegramConnector: Connector = {
     for (const chat of chatsToSync) {
       // Skip chats where last message is older than our last sync
       const lastSyncKey = `synced_at:${chat.id}`;
-      const lastSyncValue = db.getSyncCursor("telegram", lastSyncKey);
+      const lastSyncValue = await db.getSyncCursor("telegram", lastSyncKey);
       if (lastSyncValue && chat.lastMessageDate) {
         const lastSyncMs = parseInt(lastSyncValue);
         const lastMsgMs = new Date(chat.lastMessageDate).getTime();
@@ -178,13 +178,13 @@ export const telegramConnector: Connector = {
 
       // Get last known message ID for this chat to use as min_id
       const cursorKey = `msg_id:${chat.id}`;
-      const lastMsgId = db.getSyncCursor("telegram", cursorKey);
+      const lastMsgId = await db.getSyncCursor("telegram", cursorKey);
       let minId = lastMsgId ? parseInt(lastMsgId) : 0;
 
       // Calculate offset_date: use sync_start if it's earlier than cursor (backfill)
       let offsetDate: string | undefined;
       const cursorDateKey = `chat:${chat.id}`;
-      const cursorValue = db.getSyncCursor("telegram", cursorDateKey);
+      const cursorValue = await db.getSyncCursor("telegram", cursorDateKey);
 
       if (minId === 0) {
         const referenceTs = cursorValue
@@ -267,7 +267,7 @@ export const telegramConnector: Connector = {
     const decoder = new TextDecoder();
     let stdoutBuf = "";
 
-    const processChatLine = (line: string) => {
+    const processChatLine = async (line: string) => {
       let chatResult: BulkChatResult;
       try {
         chatResult = JSON.parse(line);
@@ -301,10 +301,10 @@ export const telegramConnector: Connector = {
         if (msg.id > maxMsgId) maxMsgId = msg.id;
 
         if (msg.sender && !contactCache.has(msg.sender)) {
-          const existing = db.getContactBySourceId("telegram", msg.sender);
+          const existing = await db.getContactBySourceId("telegram", msg.sender);
           if (!existing) {
-            const contactId = db.upsertContact(msg.sender);
-            db.upsertContactIdentity({
+            const contactId = await db.upsertContact(msg.sender);
+            await db.upsertContactIdentity({
               contactId,
               source: "telegram",
               sourceUserId: msg.sender,
@@ -315,7 +315,7 @@ export const telegramConnector: Connector = {
           contactCache.set(msg.sender, true);
         }
 
-        db.upsertMessage({
+        await db.upsertMessage({
           source: "telegram",
           source_id: sourceId,
           channel_id: chatId,
@@ -338,12 +338,12 @@ export const telegramConnector: Connector = {
       // Update cursors using the original spec ID so lookups match on next sync
       const cursorId = specIdByName.get(chatName) ?? chatId;
       if (maxMsgId > 0) {
-        db.setSyncCursor("telegram", `msg_id:${cursorId}`, String(maxMsgId));
+        await db.setSyncCursor("telegram", `msg_id:${cursorId}`, String(maxMsgId));
       }
       if (latestDate) {
-        db.setSyncCursor("telegram", `chat:${cursorId}`, latestDate);
+        await db.setSyncCursor("telegram", `chat:${cursorId}`, latestDate);
       }
-      db.setSyncCursor("telegram", `synced_at:${cursorId}`, String(Date.now()));
+      await db.setSyncCursor("telegram", `synced_at:${cursorId}`, String(Date.now()));
 
       result.messagesAdded += chatMsgCount;
       if (chatMsgCount > 0) {
@@ -358,10 +358,10 @@ export const telegramConnector: Connector = {
       const lines = stdoutBuf.split("\n");
       stdoutBuf = lines.pop() ?? "";
       for (const line of lines) {
-        if (line.trim()) processChatLine(line.trim());
+        if (line.trim()) await processChatLine(line.trim());
       }
     }
-    if (stdoutBuf.trim()) processChatLine(stdoutBuf.trim());
+    if (stdoutBuf.trim()) await processChatLine(stdoutBuf.trim());
 
     await stderrDrain;
     await proc.exited;
@@ -375,7 +375,7 @@ export const telegramConnector: Connector = {
     log.info(`  Sync completed in ${elapsed}s: ${result.messagesAdded} messages, ${result.contactsAdded} contacts`);
 
     // Save global sync timestamp so next run can skip old dialogs
-    db.setSyncCursor("telegram", "last_sync", String(syncStart));
+    await db.setSyncCursor("telegram", "last_sync", String(syncStart));
 
     return result;
   },

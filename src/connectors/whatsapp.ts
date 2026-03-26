@@ -86,7 +86,7 @@ async function syncInstance(
   for (const chat of allChats) {
     const chatName = chat.name || chat.id;
     const cursorKey = `${name}:chat:${chat.id}`;
-    const effectiveStart = getEffectiveSyncStart(db, config, "whatsapp", cursorKey);
+    const effectiveStart = await getEffectiveSyncStart(db, config, "whatsapp", cursorKey);
     const afterTs = effectiveStart ? parseInt(effectiveStart) : 0;
 
     log.info(`    ${chatName}`);
@@ -125,7 +125,7 @@ async function syncInstance(
 
         const authorName = msg._data?.notifyName ?? (msg.fromMe ? "Me" : msg.from);
 
-        db.upsertMessage({
+        await db.upsertMessage({
           source: "whatsapp",
           source_id: `${name}:${msg.id}`,
           channel_id: chat.id,
@@ -147,10 +147,10 @@ async function syncInstance(
         }
 
         if (!msg.fromMe) {
-          const existing = db.getContactBySourceId("whatsapp", msg.from);
+          const existing = await db.getContactBySourceId("whatsapp", msg.from);
           if (!existing) {
-            const contactId = db.upsertContact(authorName);
-            db.upsertContactIdentity({
+            const contactId = await db.upsertContact(authorName);
+            await db.upsertContactIdentity({
               contactId,
               source: "whatsapp",
               sourceUserId: msg.from,
@@ -167,7 +167,7 @@ async function syncInstance(
     }
 
     if (latestTs > afterTs) {
-      db.setSyncCursor("whatsapp", cursorKey, String(latestTs));
+      await db.setSyncCursor("whatsapp", cursorKey, String(latestTs));
     }
 
     result.messagesAdded += chatMsgCount;

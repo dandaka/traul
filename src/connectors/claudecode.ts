@@ -76,7 +76,7 @@ export const claudeCodeConnector: Connector = {
       for (const file of files) {
         const sessionId = basename(file, ".jsonl");
         const cursorKey = `session:${sessionId}`;
-        let lastCursor = db.getSyncCursor("claudecode", cursorKey);
+        let lastCursor = await db.getSyncCursor("claudecode", cursorKey);
 
         // If sync_start is earlier than cursor, ignore cursor to backfill
         if (lastCursor && syncStartSec > 0) {
@@ -150,7 +150,7 @@ export const claudeCodeConnector: Connector = {
 
         // Store each meaningful exchange as a message
         for (const sm of sessionMessages) {
-          db.upsertMessage({
+          await db.upsertMessage({
             source: "claudecode",
             source_id: `cc:${sessionId}:${sm.uuid}`,
             channel_name: projectName,
@@ -164,20 +164,19 @@ export const claudeCodeConnector: Connector = {
 
           // Chunk long messages for better embedding coverage
           if (shouldChunk(sm.text)) {
-            const msgRow = db.db
-              .query<{ id: number }, [string, string]>(
-                "SELECT id FROM messages WHERE source = ? AND source_id = ?"
-              )
-              .get("claudecode", `cc:${sessionId}:${sm.uuid}`);
+            const msgResult = await db.execute(
+              `SELECT id FROM messages WHERE source = 'claudecode' AND source_id = '${`cc:${sessionId}:${sm.uuid}`.replace(/'/g, "''")}'`
+            );
+            const msgRow = msgResult.rows[0] as { id: number } | undefined;
             if (msgRow) {
               const chunks = chunkText(sm.text, { docTitle: `${projectName} session` });
-              db.replaceChunks(msgRow.id, chunks);
+              await db.replaceChunks(msgRow.id, chunks);
             }
           }
         }
 
         if (latestTimestamp) {
-          db.setSyncCursor("claudecode", cursorKey, latestTimestamp);
+          await db.setSyncCursor("claudecode", cursorKey, latestTimestamp);
         }
       }
     }

@@ -127,14 +127,14 @@ async function syncWorkspace(
   result: SyncResult,
   contactCache: Map<string, string>,
 ): Promise<void> {
-  function ensureContact(user: { id: string; name: string; displayName: string }): string {
+  async function ensureContact(user: { id: string; name: string; displayName: string }): Promise<string> {
     const cached = contactCache.get(user.id);
     if (cached) return cached;
 
-    const existing = db.getContactBySourceId("linear", user.id);
+    const existing = await db.getContactBySourceId("linear", user.id);
     if (!existing) {
-      const contactId = db.upsertContact(user.displayName || user.name);
-      db.upsertContactIdentity({
+      const contactId = await db.upsertContact(user.displayName || user.name);
+      await db.upsertContactIdentity({
         contactId,
         source: "linear",
         sourceUserId: user.id,
@@ -174,7 +174,7 @@ async function syncWorkspace(
 
   for (const teamId of passes) {
     const cursorKey = `${workspaceName}:${teamId ? `team:${teamId}` : "all"}`;
-    const lastSync = db.getSyncCursor("linear", cursorKey);
+    const lastSync = await db.getSyncCursor("linear", cursorKey);
     // If sync_start is earlier than cursor, backfill from sync_start
     let updatedAfter = lastSync ?? syncStartDate;
     if (lastSync && syncStartDate && syncStartDate < lastSync) {
@@ -199,10 +199,10 @@ async function syncWorkspace(
           ? `${issue.team?.key ?? "LIN"} / ${issue.project.name}`
           : issue.team?.name ?? "Linear";
 
-        if (issue.creator) ensureContact(issue.creator);
-        if (issue.assignee) ensureContact(issue.assignee);
+        if (issue.creator) await ensureContact(issue.creator);
+        if (issue.assignee) await ensureContact(issue.assignee);
 
-        db.upsertMessage({
+        await db.upsertMessage({
           source: "linear",
           source_id: `issue:${issue.id}`,
           channel_name: channelName,
@@ -224,9 +224,9 @@ async function syncWorkspace(
         result.messagesAdded++;
 
         for (const comment of issue.comments.nodes) {
-          if (comment.user) ensureContact(comment.user);
+          if (comment.user) await ensureContact(comment.user);
 
-          db.upsertMessage({
+          await db.upsertMessage({
             source: "linear",
             source_id: `comment:${comment.id}`,
             channel_name: channelName,
@@ -251,7 +251,7 @@ async function syncWorkspace(
     } while (after);
 
     if (latestUpdated) {
-      db.setSyncCursor("linear", cursorKey, latestUpdated);
+      await db.setSyncCursor("linear", cursorKey, latestUpdated);
     }
   }
 }

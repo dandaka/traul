@@ -84,7 +84,7 @@ export const markdownConnector: Connector = {
         const relPath = relative(dir.replace(/^~/, homedir()), filePath);
         const sourceId = `md:${fileHash(filePath)}`;
         const cursorKey = `file:${relPath}`;
-        const lastHash = db.getSyncCursor("markdown", cursorKey);
+        const lastHash = await db.getSyncCursor("markdown", cursorKey);
         const contentHash = fileHash(content);
 
         // Skip if content hasn't changed
@@ -93,7 +93,7 @@ export const markdownConnector: Connector = {
         const channelName = channelFromPath(filePath, dir);
         const title = basename(filePath, ".md");
 
-        db.upsertMessage({
+        await db.upsertMessage({
           source: "markdown",
           source_id: sourceId,
           channel_name: channelName,
@@ -105,14 +105,13 @@ export const markdownConnector: Connector = {
 
         // Chunk large files for better search coverage
         if (shouldChunk(content)) {
-          const msgRow = db.db
-            .query<{ id: number }, [string, string]>(
-              "SELECT id FROM messages WHERE source = ? AND source_id = ?"
-            )
-            .get("markdown", sourceId);
+          const msgResult = await db.execute(
+            `SELECT id FROM messages WHERE source = 'markdown' AND source_id = '${sourceId.replace(/'/g, "''")}'`
+          );
+          const msgRow = msgResult.rows[0] as { id: number } | undefined;
           if (msgRow) {
             const chunks = chunkText(content, { docTitle: title });
-            db.replaceChunks(msgRow.id, chunks);
+            await db.replaceChunks(msgRow.id, chunks);
             log.info(`    ${title}: ${chunks.length} chunks`);
           }
         }
@@ -120,7 +119,7 @@ export const markdownConnector: Connector = {
         result.messagesAdded++;
         synced++;
 
-        db.setSyncCursor("markdown", cursorKey, contentHash);
+        await db.setSyncCursor("markdown", cursorKey, contentHash);
       }
 
       log.info(`  ${synced} files synced from ${dir} (${files.length} total .md files)`);
@@ -128,7 +127,7 @@ export const markdownConnector: Connector = {
 
     // Prune messages whose source files no longer exist
     const expandedDirs = dirs.map((d) => d.replace(/^~/, homedir()));
-    const allMessages = db.getMessagesBySource("markdown");
+    const allMessages = await db.getMessagesBySource("markdown");
     let pruned = 0;
 
     for (const msg of allMessages) {
@@ -143,8 +142,8 @@ export const markdownConnector: Connector = {
 
       const fileExists = expandedDirs.some((dir) => existsSync(join(dir, relPath)));
       if (!fileExists) {
-        db.deleteMessage(msg.id);
-        db.deleteSyncCursor("markdown", `file:${relPath}`);
+        await db.deleteMessage(msg.id);
+        await db.deleteSyncCursor("markdown", `file:${relPath}`);
         pruned++;
       }
     }

@@ -52,10 +52,10 @@ export const slackConnector: Connector = {
 
         userCache.set(userId, { displayName, username });
 
-        const existing = db.getContactBySourceId("slack", userId);
+        const existing = await db.getContactBySourceId("slack", userId);
         if (!existing) {
-          const contactId = db.upsertContact(displayName);
-          db.upsertContactIdentity({
+          const contactId = await db.upsertContact(displayName);
+          await db.upsertContactIdentity({
             contactId,
             source: "slack",
             sourceUserId: userId,
@@ -108,7 +108,7 @@ export const slackConnector: Connector = {
     for (const channel of channelIds) {
       log.info(`  #${channel.name}`);
       const cursorKey = `channel:${channel.id}`;
-      const oldest = getEffectiveSyncStart(db, config, "slack", cursorKey) ?? "0";
+      const oldest = (await getEffectiveSyncStart(db, config, "slack", cursorKey)) ?? "0";
       let latestTs = oldest;
       let channelMsgCount = 0;
 
@@ -127,7 +127,7 @@ export const slackConnector: Connector = {
 
           const user = msg.user ? await resolveUser(msg.user) : null;
 
-          db.upsertMessage({
+          await db.upsertMessage({
             source: "slack",
             source_id: `${channel.id}:${msg.ts}`,
             channel_id: channel.id,
@@ -166,7 +166,7 @@ export const slackConnector: Connector = {
                   ? await resolveUser(reply.user)
                   : null;
 
-                db.upsertMessage({
+                await db.upsertMessage({
                   source: "slack",
                   source_id: `${channel.id}:${reply.ts}`,
                   channel_id: channel.id,
@@ -192,7 +192,7 @@ export const slackConnector: Connector = {
       } while (cursor);
 
       if (latestTs !== oldest) {
-        db.setSyncCursor("slack", cursorKey, latestTs);
+        await db.setSyncCursor("slack", cursorKey, latestTs);
       }
       result.messagesAdded += channelMsgCount;
       log.info(`    ${channelMsgCount} messages`);

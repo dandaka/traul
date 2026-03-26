@@ -96,7 +96,7 @@ async function syncAccount(
 
   const gmail = google.gmail({ version: "v1", auth });
   const cursorKey = `${accountName}:all`;
-  const existingCursor = db.getSyncCursor("gmail", cursorKey);
+  const existingCursor = await db.getSyncCursor("gmail", cursorKey);
   const syncStartTs = getSyncStartTimestamp(config, "gmail");
 
   // Gmail cursor is stored in ms; sync_start is in seconds. Compare in seconds.
@@ -171,7 +171,7 @@ async function syncAccount(
         const fromParsed = parseEmailAddress(from);
         const threadId = msg.threadId ?? msg.id;
 
-        db.upsertMessage({
+        await db.upsertMessage({
           source: "gmail",
           source_id: `${accountName}:${msg.id}`,
           channel_id: `${accountName}:${threadId}`,
@@ -199,10 +199,10 @@ async function syncAccount(
           if (contactCache.has(parsed.email)) continue;
           contactCache.set(parsed.email, true);
 
-          const existing = db.getContactBySourceId("gmail", parsed.email);
+          const existing = await db.getContactBySourceId("gmail", parsed.email);
           if (!existing) {
-            const contactId = db.upsertContact(parsed.name || parsed.email);
-            db.upsertContactIdentity({
+            const contactId = await db.upsertContact(parsed.name || parsed.email);
+            await db.upsertContactIdentity({
               contactId,
               source: "gmail",
               sourceUserId: parsed.email,
@@ -223,7 +223,7 @@ async function syncAccount(
   } while (pageToken);
 
   if (latestInternalDate > (afterEpochMs ?? 0)) {
-    db.setSyncCursor("gmail", cursorKey, String(latestInternalDate));
+    await db.setSyncCursor("gmail", cursorKey, String(latestInternalDate));
   }
 
   result.messagesAdded += msgCount;

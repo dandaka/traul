@@ -121,17 +121,17 @@ export const discordConnector: Connector = {
     // Contact cache to avoid redundant lookups
     const contactCache = new Map<string, string>();
 
-    function resolveContact(author: { id: string; username: string; global_name?: string }): string {
+    async function resolveContact(author: { id: string; username: string; global_name?: string }): Promise<string> {
       const cached = contactCache.get(author.id);
       if (cached) return cached;
 
       const displayName = author.global_name || author.username;
       contactCache.set(author.id, displayName);
 
-      const existing = db.getContactBySourceId("discord", author.id);
+      const existing = await db.getContactBySourceId("discord", author.id);
       if (!existing) {
-        const contactId = db.upsertContact(displayName);
-        db.upsertContactIdentity({
+        const contactId = await db.upsertContact(displayName);
+        await db.upsertContactIdentity({
           contactId,
           source: "discord",
           sourceUserId: author.id,
@@ -256,7 +256,7 @@ export const discordConnector: Connector = {
       log.info(`  ${channelName}`);
 
       const cursorKey = `channel:${channel.id}`;
-      const existingCursor = db.getSyncCursor("discord", cursorKey);
+      const existingCursor = await db.getSyncCursor("discord", cursorKey);
       // If sync_start produces an earlier snowflake than cursor, backfill
       const cursor = existingCursor
         ? BigInt(initialSnowflake) < BigInt(existingCursor) ? initialSnowflake : existingCursor
@@ -306,7 +306,7 @@ export const discordConnector: Connector = {
           const content = buildContent(msg);
           if (!content) continue;
 
-          const displayName = resolveContact(msg.author);
+          const displayName = await resolveContact(msg.author);
 
           // Determine thread_id
           let threadId: string | undefined;
@@ -314,7 +314,7 @@ export const discordConnector: Connector = {
             threadId = channel.id;
           }
 
-          db.upsertMessage({
+          await db.upsertMessage({
             source: "discord",
             source_id: `${channel.id}:${msg.id}`,
             channel_id: channel.id,
@@ -337,7 +337,7 @@ export const discordConnector: Connector = {
       }
 
       if (latestId !== cursor) {
-        db.setSyncCursor("discord", cursorKey, latestId);
+        await db.setSyncCursor("discord", cursorKey, latestId);
       }
       result.messagesAdded += channelMsgCount;
       if (channelMsgCount > 0) {
