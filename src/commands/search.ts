@@ -1,6 +1,6 @@
 import type { TraulDB } from "../db/database";
 import { formatMessage, writeJSON } from "../lib/formatter";
-import { embedQuery, vecToBytes } from "../lib/embeddings";
+import { embedQuery } from "../lib/embeddings";
 
 export async function runSearch(
   db: TraulDB,

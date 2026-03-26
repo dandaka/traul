@@ -1,5 +1,5 @@
 import type { TraulDB } from "../db/database";
-import { embedBatch, vecToBytes, BATCH_SIZE } from "../lib/embeddings";
+import { embedBatch, BATCH_SIZE } from "../lib/embeddings";
 import { shouldChunk, chunkText, CHUNK_THRESHOLD } from "../lib/chunker";
 
 function formatDuration(ms: number): string {
