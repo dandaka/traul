@@ -80,15 +80,14 @@ export const HAS_MESSAGE = `
 `;
 
 export const INSERT_EMBEDDING = `
-  INSERT INTO vec_messages(message_id, embedding)
-  VALUES (?, ?)
+  UPDATE messages SET embedding = vector32(?) WHERE id = ?
 `;
 
 export const GET_UNEMBEDDED_MESSAGES = `
   SELECT m.id, m.content
   FROM messages m
   WHERE m.content != ''
-    AND m.id NOT IN (SELECT message_id FROM vec_messages)
+    AND m.embedding IS NULL
     AND m.id NOT IN (SELECT DISTINCT message_id FROM chunks)
   ORDER BY m.id DESC
   LIMIT ?
@@ -96,23 +95,21 @@ export const GET_UNEMBEDDED_MESSAGES = `
 
 export const VECTOR_SEARCH = `
   SELECT m.id, m.source, m.source_id, m.channel_name, m.thread_id,
-         m.author_name, m.content, m.sent_at, m.metadata,
-         v.distance
-  FROM vec_messages v
-  JOIN messages m ON m.id = v.message_id
-  WHERE v.embedding MATCH ? AND k = ?
+         m.author_name, m.content, m.sent_at, m.metadata
+  FROM vector_top_k('idx_msg_vec', vector32(?), ?) AS v
+  JOIN messages m ON m.rowid = v.id
 `;
 
 export const EMBEDDING_STATS = `
   SELECT
     (SELECT COUNT(*) FROM messages WHERE id NOT IN (SELECT DISTINCT message_id FROM chunks)) AS total_messages,
-    (SELECT COUNT(*) FROM vec_messages) AS embedded_messages
+    (SELECT COUNT(*) FROM messages WHERE embedding IS NOT NULL) AS embedded_messages
 `;
 
 export const DELETE_ORPHANED_EMBEDDINGS = `
-  DELETE FROM vec_messages
-  WHERE message_id NOT IN (SELECT id FROM messages)
-     OR message_id IN (SELECT DISTINCT message_id FROM chunks)
+  UPDATE messages SET embedding = NULL
+  WHERE embedding IS NOT NULL
+    AND id IN (SELECT DISTINCT message_id FROM chunks)
 `;
 
 // Chunk queries
@@ -129,19 +126,19 @@ export const GET_UNEMBEDDED_CHUNKS = `
   SELECT c.id, c.embedding_input AS content
   FROM chunks c
   WHERE c.content != ''
-    AND c.id NOT IN (SELECT chunk_id FROM vec_chunks)
+    AND c.embedding IS NULL
   ORDER BY c.id DESC
   LIMIT ?
 `;
 
 export const INSERT_CHUNK_EMBEDDING = `
-  INSERT INTO vec_chunks(chunk_id, embedding)
-  VALUES (?, ?)
+  UPDATE chunks SET embedding = vector32(?) WHERE id = ?
 `;
 
 export const DELETE_ORPHANED_CHUNK_EMBEDDINGS = `
-  DELETE FROM vec_chunks
-  WHERE chunk_id NOT IN (SELECT id FROM chunks)
+  UPDATE chunks SET embedding = NULL
+  WHERE embedding IS NOT NULL
+    AND message_id NOT IN (SELECT id FROM messages)
 `;
 
 export const DELETE_ORPHANED_CHUNKS = `
@@ -161,18 +158,16 @@ export const SEARCH_CHUNKS_FILTERED = `
 
 export const VECTOR_SEARCH_CHUNKS = `
   SELECT m.id, m.source, m.source_id, m.channel_name, m.thread_id,
-         m.author_name, c.content, m.sent_at, m.metadata,
-         v.distance
-  FROM vec_chunks v
-  JOIN chunks c ON c.id = v.chunk_id
+         m.author_name, c.content, m.sent_at, m.metadata
+  FROM vector_top_k('idx_chunk_vec', vector32(?), ?) AS v
+  JOIN chunks c ON c.rowid = v.id
   JOIN messages m ON m.id = c.message_id
-  WHERE v.embedding MATCH ? AND k = ?
 `;
 
 export const CHUNK_EMBEDDING_STATS = `
   SELECT
     (SELECT COUNT(*) FROM chunks) AS total_chunks,
-    (SELECT COUNT(*) FROM vec_chunks) AS embedded_chunks
+    (SELECT COUNT(*) FROM chunks WHERE embedding IS NOT NULL) AS embedded_chunks
 `;
 
 export const GET_MESSAGE_CHUNK_IDS = `
@@ -187,7 +182,7 @@ export const FTS_BACKFILL_MESSAGES = `
   FROM messages_fts
   JOIN messages m ON messages_fts.rowid = m.id
   WHERE messages_fts MATCH ?
-    AND m.id NOT IN (SELECT message_id FROM vec_messages)
+    AND m.embedding IS NULL
     AND m.id NOT IN (SELECT DISTINCT message_id FROM chunks)
 `;
 
@@ -200,7 +195,7 @@ export const FTS_BACKFILL_CHUNKS = `
   JOIN chunks c ON chunks_fts.rowid = c.id
   JOIN messages m ON m.id = c.message_id
   WHERE chunks_fts MATCH ?
-    AND c.id NOT IN (SELECT chunk_id FROM vec_chunks)
+    AND c.embedding IS NULL
 `;
 
 export const LIKE_SEARCH_MESSAGES = `
@@ -222,7 +217,7 @@ export const GET_UNCHUNKED_LONG_MESSAGES = `
   SELECT m.id, m.content
   FROM messages m
   WHERE length(m.content) > ?
-    AND m.id IN (SELECT message_id FROM vec_messages)
+    AND m.embedding IS NOT NULL
     AND m.id NOT IN (SELECT DISTINCT message_id FROM chunks)
   ORDER BY m.id DESC
   LIMIT ?
