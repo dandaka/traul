@@ -27,8 +27,8 @@ async function fetchHealth(port: number): Promise<HealthResponse | null> {
 }
 
 export async function runStats(db: TraulDB, config: TraulConfig, options: { json?: boolean }): Promise<void> {
-  const stats = db.getDetailedStats();
-  const bySource = db.getStatsBySource();
+  const stats = await db.getDetailedStats();
+  const bySource = await db.getStatsBySource();
   const health = await fetchHealth(config.daemon.port);
 
   if (options.json) {

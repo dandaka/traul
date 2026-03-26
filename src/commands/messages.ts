@@ -27,7 +27,7 @@ export async function runMessages(
     ? Math.floor(new Date(options.before).getTime() / 1000)
     : undefined;
 
-  const results = db.getMessages({
+  const results = await db.getMessages({
     channel: channel,
     channelLike: options.channel,
     author: options.author,

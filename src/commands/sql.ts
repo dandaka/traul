@@ -7,7 +7,7 @@ interface SqlOptions {
   write?: boolean;
 }
 
-export function runSql(db: TraulDB, query: string, options?: SqlOptions): Record<string, unknown>[] | { changes: number } {
+export async function runSql(db: TraulDB, query: string, options?: SqlOptions): Promise<Record<string, unknown>[] | { changes: number }> {
   const trimmed = query.trim();
   const upper = trimmed.toUpperCase();
 
@@ -22,13 +22,13 @@ export function runSql(db: TraulDB, query: string, options?: SqlOptions): Record
     }
   }
 
+  const result = await db.execute(trimmed);
   const isRead = ALLOWED_PREFIXES.some((p) => upper.startsWith(p));
   if (isRead) {
-    return db.db.prepare(trimmed).all() as Record<string, unknown>[];
+    return result.rows as Record<string, unknown>[];
   }
 
-  const { changes } = db.db.prepare(trimmed).run();
-  return { changes };
+  return { changes: result.rowsAffected };
 }
 
 interface ColumnInfo {
@@ -44,31 +44,33 @@ interface TableInfo {
   columns: ColumnInfo[];
 }
 
-export function runSchema(db: TraulDB): TableInfo[] {
-  const tables = db.db
-    .prepare(
-      `SELECT name, type FROM sqlite_master
-       WHERE (type = 'table' OR type = 'view')
-         AND name NOT LIKE 'sqlite_%'
-         AND name NOT LIKE '%_content'
-         AND name NOT LIKE '%_idx'
-         AND name NOT LIKE '%_data'
-         AND name NOT LIKE '%_docsize'
-         AND name NOT LIKE '%_config'
-       UNION
-       SELECT name, type FROM sqlite_master
-       WHERE type = 'table' AND name LIKE '%_fts'
-       ORDER BY name`
-    )
-    .all() as { name: string; type: string }[];
+export async function runSchema(db: TraulDB): Promise<TableInfo[]> {
+  const tablesResult = await db.execute(
+    `SELECT name, type FROM sqlite_master
+     WHERE (type = 'table' OR type = 'view')
+       AND name NOT LIKE 'sqlite_%'
+       AND name NOT LIKE '%_content'
+       AND name NOT LIKE '%_idx'
+       AND name NOT LIKE '%_data'
+       AND name NOT LIKE '%_docsize'
+       AND name NOT LIKE '%_config'
+     UNION
+     SELECT name, type FROM sqlite_master
+     WHERE type = 'table' AND name LIKE '%_fts'
+     ORDER BY name`
+  );
+  const tables = tablesResult.rows as unknown as { name: string; type: string }[];
 
-  return tables.map((t) => {
+  const result: TableInfo[] = [];
+  for (const t of tables) {
     let columns: ColumnInfo[] = [];
     try {
-      columns = db.db.prepare(`PRAGMA table_info(${t.name})`).all() as ColumnInfo[];
+      const colResult = await db.execute(`PRAGMA table_info(${t.name})`);
+      columns = colResult.rows as unknown as ColumnInfo[];
     } catch {
       // Virtual tables may not support table_info
     }
-    return { name: t.name, type: t.type, columns };
-  });
+    result.push({ name: t.name, type: t.type, columns });
+  }
+  return result;
 }

@@ -198,14 +198,14 @@ export function getSyncStartTimestamp(config: TraulConfig, connector?: string): 
  * If sync_start from config is earlier than the existing cursor, uses sync_start (backfill).
  * This ensures that moving sync_start to an earlier date in config takes effect.
  */
-export function getEffectiveSyncStart(
-  db: { getSyncCursor(source: string, key: string): string | null },
+export async function getEffectiveSyncStart(
+  db: { getSyncCursor(source: string, key: string): string | null | Promise<string | null> },
   config: TraulConfig,
   source: string,
   cursorKey: string,
   connector?: string,
-): string | undefined {
-  const cursor = db.getSyncCursor(source, cursorKey);
+): Promise<string | undefined> {
+  const cursor = await db.getSyncCursor(source, cursorKey);
   const syncStart = getSyncStartTimestamp(config, connector);
 
   if (!cursor) {

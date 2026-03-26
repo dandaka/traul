@@ -15,10 +15,10 @@ function formatDuration(ms: number): string {
 
 async function embedItems(
   items: Array<{ id: number; content: string }>,
-  insertFn: (id: number, embedding: Uint8Array) => void,
+  insertFn: (id: number, embedding: Float32Array) => Promise<void>,
   label: string,
   quiet: boolean,
-  chunkFn?: (id: number, content: string) => void,
+  chunkFn?: (id: number, content: string) => Promise<void>,
   onBatchDone?: (done: number, failed: number) => void,
 ): Promise<{ done: number; failed: number; elapsed: number }> {
   let done = 0;
@@ -39,7 +39,7 @@ async function embedItems(
       const short: typeof batch = [];
       for (const item of batch) {
         if (shouldChunk(item.content)) {
-          chunkFn(item.id, item.content);
+          await chunkFn(item.id, item.content);
           done++; // counted as processed (chunks will be embedded separately)
         } else {
           short.push(item);
@@ -60,7 +60,7 @@ async function embedItems(
       );
       for (let j = 0; j < batch.length; j++) {
         if (vecs[j] !== null) {
-          insertFn(batch[j].id, vecToBytes(vecs[j]!));
+          await insertFn(batch[j].id, vecs[j]!);
           done++;
         }
       }
@@ -106,26 +106,26 @@ export async function runEmbed(
 
   // Rechunk: find long messages embedded whole (pre-chunking) and convert them to chunks
   if (options.rechunk) {
-    const unchunked = db.getUnchunkedLongMessages(CHUNK_THRESHOLD, batchLimit);
+    const unchunked = await db.getUnchunkedLongMessages(CHUNK_THRESHOLD, batchLimit);
     for (const msg of unchunked) {
-      db.deleteMessageEmbedding(msg.id);
+      await db.deleteMessageEmbedding(msg.id);
       const chunks = chunkText(msg.content);
-      db.replaceChunks(msg.id, chunks);
+      await db.replaceChunks(msg.id, chunks);
     }
     if (!options.quiet) {
       console.log(`Rechunked ${unchunked.length} long messages into chunks.`);
     }
   }
 
-  const orphanedChunksData = db.deleteOrphanedChunks();
-  const orphaned = db.deleteOrphanedEmbeddings();
-  const orphanedChunks = db.deleteOrphanedChunkEmbeddings();
+  const orphanedChunksData = await db.deleteOrphanedChunks();
+  const orphaned = await db.deleteOrphanedEmbeddings();
+  const orphanedChunks = await db.deleteOrphanedChunkEmbeddings();
   if (!options.quiet && (orphanedChunksData > 0 || orphaned > 0 || orphanedChunks > 0)) {
     console.log(`Cleaned ${orphanedChunksData} orphaned chunks, ${orphaned} orphaned message embeddings, ${orphanedChunks} orphaned chunk embeddings.`);
   }
 
-  const stats = db.getEmbeddingStats();
-  const chunkStats = db.getChunkEmbeddingStats();
+  const stats = await db.getEmbeddingStats();
+  const chunkStats = await db.getChunkEmbeddingStats();
 
   if (!options.quiet) {
     console.log(`Embeddings: ${stats.embedded_messages}/${stats.total_messages} messages, ${chunkStats.embedded_chunks}/${chunkStats.total_chunks} chunks`);
@@ -137,8 +137,9 @@ export async function runEmbed(
   const embedStart = Date.now();
 
   // Embed messages — chunk long ones on the fly before each batch
-  const messages = db.getUnembeddedMessages(remaining);
-  const totalItems = messages.length + Math.min(remaining - messages.length, db.getUnembeddedChunks(1).length > 0 ? remaining - messages.length : 0);
+  const messages = await db.getUnembeddedMessages(remaining);
+  const preCheckChunks = await db.getUnembeddedChunks(1);
+  const totalItems = messages.length + Math.min(remaining - messages.length, preCheckChunks.length > 0 ? remaining - messages.length : 0);
 
   function reportProgress() {
     if (!options.onProgress || totalItems === 0) return;
@@ -153,12 +154,12 @@ export async function runEmbed(
   if (messages.length > 0) {
     const r = await embedItems(
       messages,
-      (id, emb) => db.insertEmbedding(id, emb),
+      async (id, emb) => { await db.insertEmbedding(id, emb); },
       "messages",
       !!options.quiet,
-      (id, content) => {
+      async (id, content) => {
         const chunks = chunkText(content);
-        db.replaceChunks(id, chunks);
+        await db.replaceChunks(id, chunks);
       },
       (done, failed) => { doneTotal = done + failed; reportProgress(); },
     );
@@ -174,12 +175,12 @@ export async function runEmbed(
 
   // Embed chunks with remaining budget (re-fetch since chunking may have created new ones)
   if (remaining > 0) {
-    const chunks = db.getUnembeddedChunks(remaining);
+    const chunks = await db.getUnembeddedChunks(remaining);
     if (chunks.length > 0) {
       const msgDone = doneTotal;
       const r = await embedItems(
         chunks,
-        (id, emb) => db.insertChunkEmbedding(id, emb),
+        async (id, emb) => { await db.insertChunkEmbedding(id, emb); },
         "chunks",
         !!options.quiet,
         undefined,
@@ -196,8 +197,8 @@ export async function runEmbed(
   }
 
   if (!options.quiet) {
-    const updated = db.getEmbeddingStats();
-    const updatedChunks = db.getChunkEmbeddingStats();
+    const updated = await db.getEmbeddingStats();
+    const updatedChunks = await db.getChunkEmbeddingStats();
     console.log(`Total: ${updated.embedded_messages}/${updated.total_messages} messages, ${updatedChunks.embedded_chunks}/${updatedChunks.total_chunks} chunks`);
   }
 }

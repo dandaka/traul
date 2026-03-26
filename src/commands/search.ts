@@ -2,6 +2,7 @@ import type { TraulDB } from "../db/database";
 import { formatMessage, writeJSON } from "../lib/formatter";
 import { embedQuery } from "../lib/embeddings";
 
+
 export async function runSearch(
   db: TraulDB,
   query: string,
@@ -40,21 +41,21 @@ export async function runSearch(
 
   let results;
   if (options.like) {
-    results = db.likeSearchAll(query, searchOpts);
+    results = await db.likeSearchAll(query, searchOpts);
   } else if (options.fts) {
-    results = db.ftsSearchAll(ftsQuery, searchOpts);
+    results = await db.ftsSearchAll(ftsQuery, searchOpts);
   } else {
     try {
       const vec = await embedQuery(query);
-      results = db.hybridSearchAll(vecToBytes(vec), ftsQuery, searchOpts);
-      const { total_messages, embedded_messages } = db.getEmbeddingStats();
+      results = await db.hybridSearchAll(vec, ftsQuery, searchOpts);
+      const { total_messages, embedded_messages } = await db.getEmbeddingStats();
       const pct = total_messages > 0 ? Math.round((embedded_messages / total_messages) * 100) : 0;
       if (pct < 100) {
         console.warn(`search: hybrid mode — ${pct}% vector, ${100 - pct}% FTS`);
       }
     } catch {
       console.warn("search: embedding unavailable, falling back to FTS-only");
-      results = db.ftsSearchAll(ftsQuery, searchOpts);
+      results = await db.ftsSearchAll(ftsQuery, searchOpts);
     }
   }
 

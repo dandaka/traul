@@ -15,9 +15,9 @@ export async function runGet(
   if (options.date) {
     const dayStart = Math.floor(new Date(options.date).getTime() / 1000);
     const dayEnd = dayStart + 86400;
-    messages = db.getThreadsByDate(dayStart, dayEnd);
+    messages = await db.getThreadsByDate(dayStart, dayEnd);
   } else if (threadId) {
-    messages = db.getThread(threadId);
+    messages = await db.getThread(threadId);
   } else {
     console.error("Usage: traul get <thread-id> or traul get --date 2026-03-10");
     process.exit(1);

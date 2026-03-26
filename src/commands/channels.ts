@@ -13,7 +13,7 @@ export async function runChannels(
     json?: boolean;
   }
 ): Promise<void> {
-  const results = db.getChannels({
+  const results = await db.getChannels({
     source: options.source,
     search: options.search,
   });
