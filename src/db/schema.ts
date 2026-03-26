@@ -1,15 +1,8 @@
-import { Database } from "bun:sqlite";
-import * as sqliteVec from "sqlite-vec";
-import { EMBED_DIMS } from "../lib/embeddings";
+import { createClient, type Client } from "@libsql/client";
 
-// macOS ships Apple's SQLite which doesn't support extensions.
-// Use Homebrew's vanilla SQLite instead.
-if (process.platform === "darwin") {
-  const HOMEBREW_SQLITE = "/opt/homebrew/opt/sqlite/lib/libsqlite3.dylib";
-  Database.setCustomSQLite(HOMEBREW_SQLITE);
-}
+export const EMBED_DIMS = 1024;
 
-const SCHEMA_SQL = `
+export const SCHEMA_SQL = `
   CREATE TABLE IF NOT EXISTS messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source TEXT NOT NULL,
@@ -22,6 +15,7 @@ const SCHEMA_SQL = `
     content TEXT NOT NULL,
     sent_at INTEGER NOT NULL,
     metadata TEXT,
+    embedding F32_BLOB(1024),
     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
     updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
     UNIQUE(source, source_id)
@@ -92,6 +86,7 @@ const SCHEMA_SQL = `
     chunk_index INTEGER NOT NULL,
     content TEXT NOT NULL,
     embedding_input TEXT NOT NULL,
+    embedding F32_BLOB(1024),
     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
     UNIQUE(message_id, chunk_index)
   );
@@ -124,19 +119,28 @@ const SCHEMA_SQL = `
   );
 `;
 
-export function initializeDatabase(path: string): Database {
-  const db = new Database(path, { create: true });
-  sqliteVec.load(db);
-  db.exec("PRAGMA journal_mode = WAL");
-  db.exec("PRAGMA foreign_keys = ON");
-  db.exec(SCHEMA_SQL);
-  db.exec(
-    `CREATE VIRTUAL TABLE IF NOT EXISTS vec_messages USING vec0(message_id INTEGER PRIMARY KEY, embedding float[${EMBED_DIMS}])`
-  );
-  db.exec(
-    `CREATE VIRTUAL TABLE IF NOT EXISTS vec_chunks USING vec0(chunk_id INTEGER PRIMARY KEY, embedding float[${EMBED_DIMS}])`
-  );
+export async function initializeDatabase(path: string): Promise<Client> {
+  const url = path === ":memory:" ? ":memory:" : `file:${path}`;
+  const db = createClient({ url });
+  await db.executeMultiple("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
+  await db.executeMultiple(SCHEMA_SQL);
+
+  const indexes = (
+    await db.execute(
+      "SELECT name FROM sqlite_master WHERE type='index' AND name IN ('idx_msg_vec', 'idx_chunk_vec')"
+    )
+  ).rows.map((r: any) => r.name);
+
+  if (!indexes.includes("idx_msg_vec")) {
+    await db.execute(
+      "CREATE INDEX idx_msg_vec ON messages(libsql_vector_idx(embedding, 'metric=cosine'))"
+    );
+  }
+  if (!indexes.includes("idx_chunk_vec")) {
+    await db.execute(
+      "CREATE INDEX idx_chunk_vec ON chunks(libsql_vector_idx(embedding, 'metric=cosine'))"
+    );
+  }
+
   return db;
 }
-
-export { SCHEMA_SQL };
