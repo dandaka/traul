@@ -22,8 +22,7 @@ const db = await TraulDB.create(config.database.path);
 const migrationResult = await runMigrations(db);
 
 if (migrationResult.embeddingsReset) {
-  console.log("Re-embedding all messages after migration...");
-  await runEmbed(db, { limit: "0", quiet: false });
+  console.log("Embeddings reset — run 'traul embed' to re-generate.");
 }
 
 const program = new Command();

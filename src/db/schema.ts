@@ -125,6 +125,15 @@ export async function initializeDatabase(path: string): Promise<Client> {
   await db.executeMultiple("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
   await db.executeMultiple(SCHEMA_SQL);
 
+  // Add embedding columns to existing tables (no-op on fresh DBs)
+  for (const [table, col] of [["messages", "embedding"], ["chunks", "embedding"]] as const) {
+    const cols = (await db.execute(`PRAGMA table_info(${table})`)).rows;
+    if (!cols.some((r: any) => r.name === col)) {
+      await db.execute(`ALTER TABLE ${table} ADD COLUMN ${col} F32_BLOB(${EMBED_DIMS})`);
+    }
+  }
+
+  // DiskANN vector indexes
   const indexes = (
     await db.execute(
       "SELECT name FROM sqlite_master WHERE type='index' AND name IN ('idx_msg_vec', 'idx_chunk_vec')"

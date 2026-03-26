@@ -19,8 +19,10 @@ export async function runMigrations(db: TraulDB): Promise<MigrationResult> {
   );
   if (oldVecTable.rows.length > 0) {
     log.info("Migrating from sqlite-vec to libSQL native vectors...");
-    await db.execute("DROP TABLE IF EXISTS vec_messages");
-    await db.execute("DROP TABLE IF EXISTS vec_chunks");
+    // vec0 tables can't be dropped without the sqlite-vec extension loaded,
+    // but they're harmless — just ignore errors
+    try { await db.execute("DROP TABLE IF EXISTS vec_messages"); } catch {}
+    try { await db.execute("DROP TABLE IF EXISTS vec_chunks"); } catch {}
     await db.resetEmbeddings();
     result.embeddingsReset = true;
     await db.setMeta("schema_version", "2");
