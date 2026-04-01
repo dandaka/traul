@@ -415,7 +415,7 @@ describe("TraulDB async", () => {
   });
 
   describe("vector search", () => {
-    it("vector search with vector_top_k", async () => {
+    it("vector search with brute-force cosine distance", async () => {
       await db.upsertMessage({
         source: "test",
         source_id: "1",

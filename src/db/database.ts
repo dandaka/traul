@@ -296,7 +296,7 @@ export class TraulDB {
   ): Promise<MessageRow[]> {
     const k = options?.limit ?? 20;
     const conditions: string[] = [];
-    const params: (Uint8Array | string | number)[] = [f32ToBytes(embedding), k];
+    const params: (Uint8Array | string | number)[] = [f32ToBytes(embedding)];
 
     if (options?.source) {
       conditions.push("m.source = ?");
@@ -319,6 +319,8 @@ export class TraulDB {
     if (conditions.length > 0) {
       sql += " AND " + conditions.join(" AND ");
     }
+    sql += " ORDER BY distance ASC LIMIT ?";
+    params.push(k);
 
     const result = await this.db.execute({ sql, args: params as any });
     return result.rows as unknown as MessageRow[];
@@ -738,7 +740,7 @@ export class TraulDB {
   ): Promise<MessageRow[]> {
     const k = options?.limit ?? 20;
     const conditions: string[] = [];
-    const params: (Uint8Array | string | number)[] = [f32ToBytes(embedding), k];
+    const params: (Uint8Array | string | number)[] = [f32ToBytes(embedding)];
 
     if (options?.source) {
       conditions.push("m.source = ?");
@@ -761,6 +763,8 @@ export class TraulDB {
     if (conditions.length > 0) {
       sql += " AND " + conditions.join(" AND ");
     }
+    sql += " ORDER BY distance ASC LIMIT ?";
+    params.push(k);
 
     const result = await this.db.execute({ sql, args: params as any });
     return result.rows as unknown as MessageRow[];

@@ -23,15 +23,15 @@ describe("schema", () => {
     db.close();
   });
 
-  it("creates DiskANN vector indexes", async () => {
+  it("does not create DiskANN vector indexes", async () => {
     const db = await initializeDatabase(":memory:");
     const indexes = (
       await db.execute(
         "SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'idx_%vec%'"
       )
     ).rows.map((r: any) => r.name);
-    expect(indexes).toContain("idx_msg_vec");
-    expect(indexes).toContain("idx_chunk_vec");
+    expect(indexes).not.toContain("idx_msg_vec");
+    expect(indexes).not.toContain("idx_chunk_vec");
     db.close();
   });
 

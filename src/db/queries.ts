@@ -95,9 +95,10 @@ export const GET_UNEMBEDDED_MESSAGES = `
 
 export const VECTOR_SEARCH = `
   SELECT m.id, m.source, m.source_id, m.channel_name, m.thread_id,
-         m.author_name, m.content, m.sent_at, m.metadata
-  FROM vector_top_k('idx_msg_vec', vector32(?), ?) AS v
-  JOIN messages m ON m.rowid = v.id
+         m.author_name, m.content, m.sent_at, m.metadata,
+         vector_distance_cos(m.embedding, vector32(?)) AS distance
+  FROM messages m
+  WHERE m.embedding IS NOT NULL
 `;
 
 export const EMBEDDING_STATS = `
@@ -158,10 +159,11 @@ export const SEARCH_CHUNKS_FILTERED = `
 
 export const VECTOR_SEARCH_CHUNKS = `
   SELECT m.id, m.source, m.source_id, m.channel_name, m.thread_id,
-         m.author_name, c.content, m.sent_at, m.metadata
-  FROM vector_top_k('idx_chunk_vec', vector32(?), ?) AS v
-  JOIN chunks c ON c.rowid = v.id
+         m.author_name, c.content, m.sent_at, m.metadata,
+         vector_distance_cos(c.embedding, vector32(?)) AS distance
+  FROM chunks c
   JOIN messages m ON m.id = c.message_id
+  WHERE c.embedding IS NOT NULL
 `;
 
 export const CHUNK_EMBEDDING_STATS = `

@@ -133,22 +133,17 @@ export async function initializeDatabase(path: string): Promise<Client> {
     }
   }
 
-  // DiskANN vector indexes
-  const indexes = (
-    await db.execute(
-      "SELECT name FROM sqlite_master WHERE type='index' AND name IN ('idx_msg_vec', 'idx_chunk_vec')"
-    )
-  ).rows.map((r: any) => r.name);
-
-  if (!indexes.includes("idx_msg_vec")) {
-    await db.execute(
-      "CREATE INDEX idx_msg_vec ON messages(libsql_vector_idx(embedding, 'metric=cosine'))"
-    );
-  }
-  if (!indexes.includes("idx_chunk_vec")) {
-    await db.execute(
-      "CREATE INDEX idx_chunk_vec ON chunks(libsql_vector_idx(embedding, 'metric=cosine'))"
-    );
+  // Drop DiskANN vector indexes if they exist (too expensive: ~209KB per vector)
+  for (const idx of ["idx_msg_vec", "idx_chunk_vec"]) {
+    const exists = (
+      await db.execute({
+        sql: "SELECT 1 FROM sqlite_master WHERE type='index' AND name=?",
+        args: [idx],
+      })
+    ).rows.length > 0;
+    if (exists) {
+      await db.execute(`DROP INDEX ${idx}`);
+    }
   }
 
   return db;
