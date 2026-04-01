@@ -13,20 +13,22 @@ export interface MigrationResult {
 export async function runMigrations(db: TraulDB): Promise<MigrationResult> {
   const result: MigrationResult = { chunksReset: false, embeddingsReset: false, syncCursorsReset: false };
 
-  // Schema v2 migration: detect old sqlite-vec tables
-  const oldVecTable = await db.execute(
-    "SELECT name FROM sqlite_master WHERE type='table' AND name = 'vec_messages'"
-  );
-  if (oldVecTable.rows.length > 0) {
-    log.info("Migrating from sqlite-vec to libSQL native vectors...");
-    // vec0 tables can't be dropped without the sqlite-vec extension loaded,
-    // but they're harmless — just ignore errors
-    try { await db.execute("DROP TABLE IF EXISTS vec_messages"); } catch {}
-    try { await db.execute("DROP TABLE IF EXISTS vec_chunks"); } catch {}
-    await db.resetEmbeddings();
-    result.embeddingsReset = true;
+  // Schema v2 migration: detect old sqlite-vec schema (run once)
+  const schemaVersion = await db.getMeta("schema_version");
+  if (schemaVersion !== "2") {
+    const oldVecTable = await db.execute(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name = 'vec_messages'"
+    );
+    if (oldVecTable.rows.length > 0) {
+      log.info("Migrating from sqlite-vec to libSQL native vectors...");
+      // vec0 tables can't be dropped without the sqlite-vec extension loaded — harmless leftovers
+      try { await db.execute("DROP TABLE IF EXISTS vec_messages"); } catch {}
+      try { await db.execute("DROP TABLE IF EXISTS vec_chunks"); } catch {}
+      await db.resetEmbeddings();
+      result.embeddingsReset = true;
+      log.info("Migration complete. Run 'traul embed' to re-generate embeddings.");
+    }
     await db.setMeta("schema_version", "2");
-    log.info("Migration complete. Auto-embedding will start...");
   }
 
   // Existing migration logic (now async)
