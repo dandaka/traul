@@ -21,7 +21,8 @@ export async function runMigrations(db: TraulDB): Promise<MigrationResult> {
     );
     if (oldVecTable.rows.length > 0) {
       log.info("Migrating from sqlite-vec to libSQL native vectors...");
-      // vec0 tables can't be dropped without the sqlite-vec extension loaded — harmless leftovers
+      // vec0 virtual tables can't be dropped without sqlite-vec extension,
+      // but their shadow tables (the actual data) can be dropped directly
       try { await db.execute("DROP TABLE IF EXISTS vec_messages"); } catch {}
       try { await db.execute("DROP TABLE IF EXISTS vec_chunks"); } catch {}
       await db.resetEmbeddings();
@@ -29,6 +30,21 @@ export async function runMigrations(db: TraulDB): Promise<MigrationResult> {
       log.info("Migration complete. Run 'traul embed' to re-generate embeddings.");
     }
     await db.setMeta("schema_version", "2");
+  }
+
+  // Drop leftover sqlite-vec shadow tables and DiskANN metadata
+  const vecShadowTables = (
+    await db.execute(
+      "SELECT name FROM sqlite_master WHERE type='table' AND (name LIKE 'vec_%' OR name LIKE 'libsql_vector%')"
+    )
+  ).rows.map((r: any) => r.name as string);
+  for (const table of vecShadowTables) {
+    try {
+      log.info(`Dropping leftover table: ${table}`);
+      await db.execute(`DROP TABLE IF EXISTS "${table}"`);
+    } catch {
+      // vec0 virtual tables require sqlite-vec extension to drop — skip them
+    }
   }
 
   // Existing migration logic (now async)
