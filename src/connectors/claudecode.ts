@@ -162,15 +162,21 @@ export const claudeCodeConnector: Connector = {
           });
           result.messagesAdded++;
 
-          // Chunk long messages for better embedding coverage
+          // Chunk long messages for better embedding coverage (only if not already chunked)
           if (shouldChunk(sm.text)) {
+            const sourceId = `cc:${sessionId}:${sm.uuid}`.replace(/'/g, "''");
             const msgResult = await db.execute(
-              `SELECT id FROM messages WHERE source = 'claudecode' AND source_id = '${`cc:${sessionId}:${sm.uuid}`.replace(/'/g, "''")}'`
+              `SELECT id FROM messages WHERE source = 'claudecode' AND source_id = '${sourceId}'`
             );
             const msgRow = msgResult.rows[0] as { id: number } | undefined;
             if (msgRow) {
-              const chunks = chunkText(sm.text, { docTitle: `${projectName} session` });
-              await db.replaceChunks(msgRow.id, chunks);
+              const existing = await db.execute(
+                `SELECT 1 FROM chunks WHERE message_id = ${msgRow.id} LIMIT 1`
+              );
+              if (existing.rows.length === 0) {
+                const chunks = chunkText(sm.text, { docTitle: `${projectName} session` });
+                await db.replaceChunks(msgRow.id, chunks);
+              }
             }
           }
         }

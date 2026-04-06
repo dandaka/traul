@@ -32,19 +32,22 @@ export async function runMigrations(db: TraulDB): Promise<MigrationResult> {
     await db.setMeta("schema_version", "2");
   }
 
-  // Drop leftover sqlite-vec shadow tables and DiskANN metadata
-  const vecShadowTables = (
-    await db.execute(
-      "SELECT name FROM sqlite_master WHERE type='table' AND (name LIKE 'vec_%' OR name LIKE 'libsql_vector%')"
-    )
-  ).rows.map((r: any) => r.name as string);
-  for (const table of vecShadowTables) {
-    try {
-      log.info(`Dropping leftover table: ${table}`);
-      await db.execute(`DROP TABLE IF EXISTS "${table}"`);
-    } catch {
-      // vec0 virtual tables require sqlite-vec extension to drop — skip them
+  // Drop leftover sqlite-vec shadow tables and DiskANN metadata (run once)
+  if (await db.getMeta("vec_cleanup_done") !== "1") {
+    const vecShadowTables = (
+      await db.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND (name LIKE 'vec_%' OR name LIKE 'libsql_vector%')"
+      )
+    ).rows.map((r: any) => r.name as string);
+    for (const table of vecShadowTables) {
+      try {
+        log.info(`Dropping leftover table: ${table}`);
+        await db.execute(`DROP TABLE IF EXISTS "${table}"`);
+      } catch {
+        // vec0 virtual tables require sqlite-vec extension to drop — skip them
+      }
     }
+    await db.setMeta("vec_cleanup_done", "1");
   }
 
   // Existing migration logic (now async)
