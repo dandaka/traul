@@ -63,9 +63,32 @@ traul sync                # sync all sources
 traul sync slack          # sync specific source
 traul search "deployment issue"
 traul search "marketing launch" --source slack --after 2025-01-01
-traul search "error" --fts # keyword-only, no Ollama needed
-traul embed               # generate vector embeddings
-traul channels            # browse channels
+
+# Keyword-only search (FTS5/BM25, no Ollama needed)
+traul search "error" --fts
+
+# OR mode — match ANY term instead of ALL
+traul search "deposit withdraw broken" --fts --or
+
+# Substring search — bypasses FTS tokenization, useful for exact phrases
+traul search "how do I" --like -s discord -l 20
+
+# Get a full thread/conversation (search results show thread IDs)
+traul get <thread-id>
+traul get --date 2026-03-10
+traul get <thread-id> --json
+
+# JSON output (available on search, messages, channels, stats)
+traul search "error" --fts --json
+
+# Generate embeddings for vector search
+traul embed
+traul embed --rechunk    # re-chunk long messages embedded before chunking
+traul reset-embed        # drop all embeddings and recreate
+
+# Browse channels and messages
+traul channels
+traul channels --search general --json
 traul messages general --limit 50
 traul stats               # database statistics
 traul daemon start --detach  # background sync
