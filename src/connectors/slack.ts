@@ -93,11 +93,15 @@ export const slackConnector: Connector = {
         if (!found) log.warn(`Channel not found: ${name}`);
       }
     } else {
-      // All joined channels
+      // All joined channels and DMs
       for await (const page of paginateChannels(client)) {
         for (const ch of page) {
-          if (ch.is_member) {
-            channelIds.push({ id: ch.id, name: ch.name });
+          // DMs don't have is_member, they're always accessible
+          const isAccessible = ch.is_member || ch.is_im;
+          if (isAccessible) {
+            // DMs don't have names, use user ID as fallback
+            const channelName = ch.name || (ch.is_im ? `DM:${ch.user}` : ch.id);
+            channelIds.push({ id: ch.id, name: channelName });
           }
         }
       }
@@ -206,15 +210,17 @@ async function* paginateChannels(client: WebClient) {
   let cursor: string | undefined;
   do {
     const resp = await client.conversations.list({
-      types: "public_channel,private_channel",
+      types: "public_channel,private_channel,im,mpim",
       limit: 200,
       cursor,
       exclude_archived: true,
     });
     yield (resp.channels ?? []) as Array<{
       id: string;
-      name: string;
-      is_member: boolean;
+      name?: string;
+      is_member?: boolean;
+      is_im?: boolean;
+      user?: string;
     }>;
     cursor = resp.response_metadata?.next_cursor || undefined;
   } while (cursor);
