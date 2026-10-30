@@ -21,6 +21,7 @@ export async function runSync(
   }
 
   let totalAdded = 0;
+  let failed = false;
   for (const connector of toRun) {
     log.info(`Syncing ${connector.name}...`);
     try {
@@ -30,8 +31,9 @@ export async function runSync(
         `${connector.name}: ${result.messagesAdded} messages, ${result.contactsAdded} new contacts`
       );
     } catch (err) {
+      // Keep going so one broken source doesn't block the others; fail the run at the end.
       log.error(`Sync failed for ${connector.name}:`, err);
-      process.exit(1);
+      failed = true;
     }
   }
 
@@ -39,4 +41,6 @@ export async function runSync(
     log.info("Embedding new messages...");
     await runEmbed(db, { limit: String(totalAdded) });
   }
+
+  if (failed) process.exitCode = 1;
 }
