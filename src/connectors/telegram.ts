@@ -117,20 +117,20 @@ export const telegramConnector: Connector = {
   name: "telegram",
 
   async sync(db: TraulDB, config: TraulConfig): Promise<SyncResult> {
-    // Verify tg.py is accessible
-    try {
-      await runTg(["status"]);
-    } catch {
-      throw new Error(
-        `Telegram not configured. Run: python3 ${TG_SCRIPT} setup`
-      );
-    }
-
     const result: SyncResult = {
       messagesAdded: 0,
       messagesUpdated: 0,
       contactsAdded: 0,
     };
+
+    // Verify tg.py is accessible; skip (like other unconfigured sources) rather than fail the whole sync
+    try {
+      await runTg(["status"]);
+    } catch {
+      log.warn("Telegram not configured.");
+      log.warn(`Run: python3 ${TG_SCRIPT} setup`);
+      return result;
+    }
 
     const syncStartTs = getSyncStartTimestamp(config);
 

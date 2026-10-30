@@ -33,6 +33,10 @@ export interface TraulConfig {
     client_secret: string;
     refresh_token: string;
     accounts: Array<{ name: string; labels: string[] }>;
+    /** Minimum gap between Gmail API requests (default 100ms) */
+    request_interval_ms?: number;
+    /** Max messages fetched per sync run; backfill resumes next run (default 500) */
+    max_messages_per_run?: number;
   };
   whatsapp: {
     instances: Array<{
